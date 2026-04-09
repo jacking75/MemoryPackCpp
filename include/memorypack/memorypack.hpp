@@ -358,9 +358,9 @@ public:
         int32_t len = ReadCollectionHeader();
         if (len < 0) return {};
         auto count = static_cast<size_t>(len);
-        std::vector<T> result(count);
-        if (count == 0) return result;
+        if (count == 0) return {};
         EnsureBytes(count * sizeof(T));
+        std::vector<T> result(count);
         if constexpr (std::endian::native == std::endian::little) {
             std::memcpy(result.data(), data_ + pos_, count * sizeof(T));
             pos_ += count * sizeof(T);
@@ -403,6 +403,8 @@ public:
     std::vector<std::string> ReadStringVector() {
         int32_t len = ReadCollectionHeader();
         if (len < 0) return {};
+        // 각 문자열은 최소 4바이트(길이 헤더)를 차지하므로 사전 검증
+        EnsureBytes(static_cast<size_t>(len) * sizeof(int32_t));
         std::vector<std::string> result;
         result.reserve(static_cast<size_t>(len));
         for (int32_t i = 0; i < len; ++i) {
