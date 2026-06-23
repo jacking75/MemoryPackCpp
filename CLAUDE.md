@@ -1,5 +1,4 @@
 # MemoryPackCpp
-
 C#의 [MemoryPack](https://github.com/Cysharp/MemoryPack) Binary Wire Format과 호환되는 **C++ header-only 라이브러리**.
 C# 서버와 C++ 클라이언트 간 고성능 바이너리 직렬화/역직렬화를 목표로 한다.
 
@@ -7,13 +6,19 @@ C# 서버와 C++ 클라이언트 간 고성능 바이너리 직렬화/역직렬�
 
 ```
 include/memorypack/    # header-only 라이브러리 (memorypack.hpp)
+cmake/                 # 설치/패키지 config 템플릿
+tests/                 # 단위 테스트 (의존성 없는 자체 하니스)
+tools/
+  cs2cpp/              # C# [MemoryPackable] 정의 → C++ 헤더 생성 도구 (.NET 10)
 samples/
-  CSharpServer/        # .NET 10 C# 소켓 서버 (Visual Studio 2026)
-  CppClient/           # C++ 소켓 클라이언트 (CMake, Visual Studio 2026)
+  CSharpServer/        # .NET 10 C# 직렬화 테스트 서버 (포트 9000)
+  CppClient/           # C++ 콘솔 테스트 클라이언트 (포트 9000)
+  ChatServer/          # .NET 10 C# 채팅 서버 (포트 9001)
+  ChatClient/          # C++ Win32 GUI 채팅 클라이언트 (포트 9001)
+CMakeLists.txt         # 루트 빌드 (라이브러리 INTERFACE 타깃 + 테스트 + 설치)
 ```
 
 ## 핵심 설계 원칙
-
 - **Header-only**: `#include "memorypack/memorypack.hpp"` 하나로 사용
 - **크로스플랫폼**: Windows, Linux, macOS 지원. CMake 빌드 시스템 사용
 - **성능 최우선**: Zero-copy 설계, memcpy 기반, VarInt 없음, Little-Endian 고정 크기
@@ -26,25 +31,40 @@ samples/
 |------|------|
 | Object | `[1B member_count] [members...]` (255=null) |
 | Collection | `[4B int32 length] [elements...]` (-1=null) |
-| String(UTF-8) | `[4B int32 byte_length] [utf8_bytes...]` (-1=null) |
+| String | `[4B ~utf8ByteCount] [4B utf16Length] [utf8...]` (-1=null, 0=empty, >0=UTF-16) |
 | Primitives | Little-Endian 고정 크기 (bool=1B, int32=4B, float=4B, double=8B 등) |
 | Union | member_count=250 이면 WideTag, 이어서 ushort 태그 |
 
 ## 빌드
 
-### C++ 클라이언트 (Visual Studio 2026)
-`samples/CppClient/CppClient.sln`을 Visual Studio 2026에서 열어서 빌드 (x64, C++23, PlatformToolset v144)
+### 요구 사항
+- C++23 컴파일러: MSVC v143(Visual Studio 2022) 이상, GCC 13+, Clang 16+
+- CMake 3.21 이상 (CMake 빌드 사용 시)
+- .NET 10 SDK (C# 서버 / cs2cpp 도구)
 
-### C# 서버 (.NET 10)
+### 라이브러리 + 단위 테스트 (CMake, 크로스플랫폼)
 ```bash
-cd samples/CSharpServer
+cmake -B build -DMEMORYPACK_BUILD_TESTS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+### C++ 샘플 클라이언트
+- CMake: `cmake -B build -DMEMORYPACK_BUILD_SAMPLES=ON` (ChatClient는 Windows 전용)
+- Visual Studio: 각 샘플 디렉터리의 `.sln`을 열어서 빌드 (x64, C++23, PlatformToolset v144)
+
+### C# 서버 / cs2cpp 도구 (.NET 10)
+```bash
+cd samples/CSharpServer   # 또는 ChatServer
 dotnet build -c Release
+
+dotnet build tools/cs2cpp -c Release
 ```
 
 ## 구현 시 주의사항
 
 1. **멤버 순서**: MemoryPack은 이름 없이 선언 순서대로 직렬화. C#과 C++ 순서 반드시 일치
-2. **엔디안**: 항상 Little-Endian. Big-Endian 플랫폼에서는 바이트 스왑 필요
+2. **엔디안**: 항상 Little-Endian. Big-Endian 플랫폼에서는 바이트 스왑 필요(라이브러리가 자동 처리)
 3. **String**: UTF-8 기본. C# 측에서 UTF-16 사용 시 C++도 맞춰야 함
 4. **Unmanaged Struct**: C#에서 참조 타입 없는 struct는 Object Header 없이 메모리 직접 복사. C++에서 packed struct로 매핑
 5. **Version Tolerance**: Deserialize 시 memberCount 체크로 새 멤버를 gracefully 무시
@@ -80,13 +100,15 @@ struct IMemoryPackable<MyPacket> {
 
 ## 샘플 프로그램
 
-- **C# 서버** (.NET 10): 단일 클라이언트 TCP 소켓 서버. MemoryPack으로 패킷 직렬화/역직렬화
-- **C++ 클라이언트**: TCP 소켓 클라이언트. 이 라이브러리로 패킷 직렬화/역직렬화
-- **패킷 프로토콜**: `[2B packetId][4B bodyLength][body...]` 형식의 패킷 헤더
-- 다양한 타입(primitive, string, collection, 중첩 객체)의 패킷을 교환하여 라이브러리 검증
+- **CSharpServer / CppClient**: 라이브러리가 지원하는 모든 타입(primitive, string, collection, 고정 배열, 중첩 객체)의 직렬화/역직렬화를 검증하는 테스트 한 쌍. 포트 9000.
+- **ChatServer / ChatClient**: 다중 클라이언트 채팅 애플리케이션. MemoryPack의 실전 활용 예시. 포트 9001.
+- **패킷 프로토콜**: `[2B packetId][4B bodyLength][body...]` 형식의 패킷 헤더.
+
+## cs2cpp 도구
+
+C# `[MemoryPackable]` 패킷 정의(.cs)를 읽어 C++ 헤더(.hpp)와 `IMemoryPackable` 특수화를 자동 생성한다. 자세한 내용은 `tools/cs2cpp/README.md` 참고.
 
 ## 코딩 컨벤션
-
 - 네임스페이스: `memorypack`
 - 클래스/구조체: PascalCase (MemoryPackWriter, MemoryPackReader)
 - 메서드: PascalCase (WriteInt32, ReadString)

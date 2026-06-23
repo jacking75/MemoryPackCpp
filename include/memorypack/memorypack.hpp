@@ -46,6 +46,37 @@ inline T endian_convert(T value) noexcept {
     }
 }
 
+// Count UTF-16 code units in a (well-formed) UTF-8 byte sequence.
+// ASCII/BMP code points count as 1, supplementary (4-byte UTF-8) as 2 (surrogate pair).
+inline int32_t utf16_length_from_utf8(const char* data, size_t len) noexcept {
+    int32_t units = 0;
+    for (size_t i = 0; i < len; ++i) {
+        auto b = static_cast<uint8_t>(data[i]);
+        if ((b & 0xC0) == 0x80) continue;   // UTF-8 continuation byte
+        units += (b >= 0xF0) ? 2 : 1;       // 4-byte lead → surrogate pair
+    }
+    return units;
+}
+
+// Append a Unicode code point to a UTF-8 string.
+inline void append_utf8_codepoint(std::string& out, uint32_t cp) {
+    if (cp <= 0x7F) {
+        out.push_back(static_cast<char>(cp));
+    } else if (cp <= 0x7FF) {
+        out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp <= 0xFFFF) {
+        out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else {
+        out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+}
+
 } // namespace detail
 
 // Forward declaration for WriteValue / ReadValue generic helpers
@@ -106,10 +137,15 @@ public:
     void WriteFloat(float v)     { WriteRaw(v); }
     void WriteDouble(double v)   { WriteRaw(v); }
 
-    // String (UTF-8)
+    // String — MemoryPack UTF-8 wire format:
+    //   null  -> int32 -1
+    //   empty -> int32 0
+    //   else  -> int32 (~utf8ByteCount), int32 (utf16Length), utf8 bytes
     void WriteString(const std::string& s) {
-        auto byteLen = static_cast<int32_t>(s.size());
-        WriteRaw(byteLen);
+        if (s.empty()) { WriteRaw(static_cast<int32_t>(0)); return; }
+        auto byteCount = static_cast<int32_t>(s.size());
+        WriteRaw(static_cast<int32_t>(~byteCount));                       // ~byteCount (<= -2)
+        WriteRaw(detail::utf16_length_from_utf8(s.data(), s.size()));     // utf16 code-unit count
         AppendBytes(reinterpret_cast<const uint8_t*>(s.data()), s.size());
     }
 
@@ -315,7 +351,7 @@ public:
     // Object Header — returns {memberCount, isNull}
     std::pair<uint8_t, bool> ReadObjectHeader() {
         uint8_t b = ReadByte();
-        if (b == NULL_OBJECT) return {0, true};
+        if (b == NULL_OBJECT) return {uint8_t{0}, true};
         return {b, false};
     }
 
@@ -340,14 +376,20 @@ public:
     float    ReadFloat()  { return ReadRaw<float>(); }
     double   ReadDouble() { return ReadRaw<double>(); }
 
-    // String (UTF-8) — returns nullopt for null string
+    // String (MemoryPack wire format) — returns nullopt for null string.
+    //   header == -1 -> null, == 0 -> empty, > 0 -> UTF-16 (code-unit count),
+    //   <= -2 -> UTF-8 (~header = byte count, followed by an int32 utf16Length).
     std::optional<std::string> ReadString() {
-        int32_t byteLen = ReadRaw<int32_t>();
-        if (byteLen == -1) return std::nullopt;
-        if (byteLen < 0) throw std::runtime_error("MemoryPackReader: invalid string length");
-        EnsureBytes(static_cast<size_t>(byteLen));
-        std::string result(reinterpret_cast<const char*>(data_ + pos_), static_cast<size_t>(byteLen));
-        pos_ += static_cast<size_t>(byteLen);
+        int32_t header = ReadRaw<int32_t>();
+        if (header == -1) return std::nullopt;       // null
+        if (header == 0)  return std::string{};      // empty
+        if (header > 0)   return ReadUtf16String(header);
+
+        int32_t byteCount = ~header;                 // UTF-8 byte count
+        ReadRaw<int32_t>();                          // utf16Length (not needed to decode)
+        EnsureBytes(static_cast<size_t>(byteCount));
+        std::string result(reinterpret_cast<const char*>(data_ + pos_), static_cast<size_t>(byteCount));
+        pos_ += static_cast<size_t>(byteCount);
         return result;
     }
 
@@ -508,6 +550,28 @@ private:
         std::memcpy(&value, data_ + pos_, sizeof(T));
         pos_ += sizeof(T);
         return detail::endian_convert(value);
+    }
+
+    // Decode `utf16Length` UTF-16LE code units (handling surrogate pairs) into a UTF-8 string.
+    std::string ReadUtf16String(int32_t utf16Length) {
+        EnsureBytes(static_cast<size_t>(utf16Length) * 2);
+        std::string out;
+        out.reserve(static_cast<size_t>(utf16Length));
+        for (int32_t i = 0; i < utf16Length; ) {
+            uint16_t hi = ReadRaw<uint16_t>();
+            ++i;
+            uint32_t cp;
+            if (hi >= 0xD800 && hi <= 0xDBFF && i < utf16Length) {
+                uint16_t lo = ReadRaw<uint16_t>();
+                ++i;
+                cp = 0x10000u + ((static_cast<uint32_t>(hi - 0xD800) << 10)
+                               | static_cast<uint32_t>(lo - 0xDC00));
+            } else {
+                cp = hi;
+            }
+            detail::append_utf8_codepoint(out, cp);
+        }
+        return out;
     }
 
     // Generic value reader for map/tuple element deserialization

@@ -39,3 +39,31 @@
 
 # debug information files
 *.dwo
+
+# Visual Studio
+.vs/
+x64/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.aps
+*.VC.db
+*.VC.opendb
+
+# .NET (C# server / cs2cpp tool)
+bin/
+obj/
+
+# CMake
+build/
+out/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+
+# Agent / editor local config
+.claude/
+.idea/
+.vscode/

@@ -1,5 +1,7 @@
 # MemoryPackCpp  
-![Status](https://img.shields.io/badge/status-in%20development-yellow)  
+![Status](https://img.shields.io/badge/status-stable-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![C++23](https://img.shields.io/badge/C%2B%2B-23-blue)
   
 C#의 [MemoryPack](https://github.com/Cysharp/MemoryPack) Binary Wire Format과 호환되는 **C++ header-only 직렬화 라이브러리**.
 
@@ -13,12 +15,40 @@ C# 서버와 C++ 클라이언트 간 고성능 바이너리 직렬화/역직렬�
 - **Zero-encoding** — VarInt 없이 Little-Endian 고정 크기로 메모리 레이아웃을 그대로 복사
 - **유연한 버퍼** — 내부 vector, 외부 vector, 고정 크기 배열 등 다양한 버퍼 모드 지원
 
+## 요구 사항
+
+- C++23 컴파일러: **MSVC v143(Visual Studio 2022) 이상, GCC 13+, Clang 16+**
+- CMake 3.21 이상 (CMake로 빌드/소비할 경우)
+
 ## 설치
 
 header-only 라이브러리이므로 `include/` 디렉터리를 프로젝트의 include 경로에 추가하면 된다.
 
 ```cpp
 #include "memorypack/memorypack.hpp"
+```
+
+### CMake로 사용
+
+INTERFACE 타깃 `memorypack::memorypack`를 제공한다.
+
+```cmake
+# (A) 서브디렉터리로 포함
+add_subdirectory(MemoryPackCpp)
+target_link_libraries(my_app PRIVATE memorypack::memorypack)
+
+# (B) FetchContent
+include(FetchContent)
+FetchContent_Declare(memorypack
+    GIT_REPOSITORY https://github.com/heungbae/MemoryPackCpp.git
+    GIT_TAG main)
+FetchContent_MakeAvailable(memorypack)
+target_link_libraries(my_app PRIVATE memorypack::memorypack)
+
+# (C) 설치 후 find_package
+#   cmake -B build && cmake --build build --target install
+find_package(memorypack CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE memorypack::memorypack)
 ```
 
 ## 빠른 시작
@@ -350,19 +380,33 @@ Collection은 **요소 수 헤더**(4바이트 int32) 뒤에 요소들이 연속
 
 ### String (문자열)
 
-문자열은 **바이트 길이 헤더**(4바이트 int32) 뒤에 UTF-8 바이트가 이어진다. 문자 수가 아닌 **바이트 수**를 기록한다.
+MemoryPack 문자열은 첫 4바이트(int32) 헤더 값으로 형태를 구분한다. 기본은 UTF-8이며, UTF-8은 **헤더가 int32 2개**다.
 
 ```
-[4B int32 byte_length] [utf8_bytes...]
+헤더 첫 int32 == -1  → null
+헤더 첫 int32 ==  0  → 빈 문자열
+헤더 첫 int32 >=  1  → UTF-16: 이어서 (그 값 × 2)바이트의 UTF-16LE 데이터
+헤더 첫 int32 <= -2  → UTF-8 : [int32 ~utf8ByteCount] [int32 utf16Length] [utf8 bytes...]
 ```
 
-- `byte_length = -1` → null 문자열
+- `~utf8ByteCount` = UTF-8 바이트 수의 1의 보수(예: 3바이트 → `~3 = -4`)
+- `utf16Length` = UTF-16 코드 유닛 수(BMP=1, 보조 평면 문자=2). ASCII에서는 바이트 수와 동일
 
-예시 — `"Hello"`:
+예시 — `"ABC"` (UTF-8, 3바이트):
 ```
-05 00 00 00             ← 바이트 길이 5
-48 65 6C 6C 6F          ← "Hello" (UTF-8)
+FC FF FF FF             ← ~3 (= -4)
+03 00 00 00             ← utf16Length = 3
+41 42 43                ← "ABC" (UTF-8)
 ```
+
+예시 — `"😀"` (U+1F600, UTF-8 4바이트, UTF-16 surrogate pair):
+```
+FB FF FF FF             ← ~4 (= -5)
+02 00 00 00             ← utf16Length = 2 (surrogate pair)
+F0 9F 98 80             ← "😀" (UTF-8)
+```
+
+> 이 라이브러리는 직렬화 시 항상 UTF-8 형태를 쓰며, 역직렬화 시 위 4가지(null/빈/UTF-16/UTF-8)를 모두 처리한다.
 
 ### Union
 
@@ -378,11 +422,11 @@ Union은 Object Header의 `member_count` 값으로 구분한다.
 ### 포맷 요약 다이어그램
 
 ```
-Object:     [1B cnt] [members...]           cnt=255 → null
-Collection: [4B len] [elements...]          len=-1  → null
-String:     [4B len] [utf8_bytes...]        len=-1  → null
-Primitive:  [raw LE bytes]                  고정 크기
-Union:      [1B 250] [2B tag] [body...]     WideTag
+Object:     [1B cnt] [members...]                       cnt=255 → null
+Collection: [4B len] [elements...]                      len=-1  → null
+String:     [4B ~utf8Bytes] [4B utf16Len] [utf8...]     -1=null, 0=empty, >0=UTF-16
+Primitive:  [raw LE bytes]                              고정 크기
+Union:      [1B 250] [2B tag] [body...]                 WideTag
 ```
 
 ## 샘플 프로그램
@@ -503,11 +547,34 @@ dotnet run
 
 ## 빌드
 
-### C++ 샘플 (Visual Studio 2026)
-각 샘플 디렉터리의 `.sln` 파일을 Visual Studio 2026에서 열어서 빌드한다 (x64, C++23).
+### 라이브러리 + 단위 테스트 (CMake, 크로스플랫폼)
 
-### C# 서버 (.NET 10)
+header-only 라이브러리 자체는 빌드가 필요 없다. 단위 테스트는 CMake로 빌드/실행한다.
+
+```bash
+cmake -B build -DMEMORYPACK_BUILD_TESTS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+단위 테스트는 외부 의존성이 없는 자체 하니스(`tests/memorypack_tests.cpp`)로, 모든 타입의
+라운드트립과 C# 호환 골든 바이트, 경계/예외 케이스를 검증한다.
+
+### C++ 샘플 클라이언트
+
+```bash
+# CMake — CppClient는 전 플랫폼, ChatClient는 Windows 전용
+cmake -B build -DMEMORYPACK_BUILD_SAMPLES=ON
+cmake --build build
+```
+
+또는 각 샘플 디렉터리의 `.sln` 파일을 Visual Studio에서 열어서 빌드한다 (x64, C++23).
+
+### C# 서버 / cs2cpp 도구 (.NET 10)
 ```bash
 cd samples/CSharpServer   # 또는 samples/ChatServer
 dotnet build -c Release
+
+# C# 패킷 정의 → C++ 헤더 생성 도구
+dotnet build tools/cs2cpp -c Release
 ```
