@@ -1,0 +1,74 @@
+# clang-tidy configuration for MemoryPackCpp.
+#
+# Advisory, not gating: findings are worth fixing in code you touch, but they do
+# not fail the build (see WarningsAsErrors below). Compiler warnings, on the
+# other hand, ARE errors - see CONTRIBUTING.md.
+#
+# The disabled checks below are switched off deliberately. A serialization
+# library is made of reinterpret_cast, pointer arithmetic, byte-count literals
+# and short names like `n` or `r`; the corresponding checks fire on nearly every
+# line and drown out real findings.
+---
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  readability-*,
+  modernize-*,
+  cppcoreguidelines-*,
+  portability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -modernize-use-trailing-return-type,
+  -cppcoreguidelines-avoid-do-while,
+  -bugprone-easily-swappable-parameters,
+  -modernize-avoid-c-arrays,
+  -cppcoreguidelines-avoid-c-arrays
+
+# Findings are reported as warnings only; nothing is promoted to an error.
+WarningsAsErrors: ''
+
+# Only diagnose the library headers. Test, sample and tool sources are still
+# analyzed as translation units, but findings inside standard-library or
+# system headers they pull in are suppressed.
+HeaderFilterRegex: 'include/memorypack/.*'
+
+FormatStyle: file
+
+CheckOptions:
+  # Match the project's naming conventions (see CONTRIBUTING.md).
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: CamelCase
+  - key: readability-identifier-naming.MethodCase
+    value: CamelCase
+  - key: readability-identifier-naming.VariableCase
+    value: camelBack
+  - key: readability-identifier-naming.ParameterCase
+    value: camelBack
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: camelBack
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: _
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: UPPER_CASE
+  # A header-only library is entirely templates and small inline helpers.
+  - key: readability-function-cognitive-complexity.IgnoreMacros
+    value: 'true'
+  - key: performance-move-const-arg.CheckTriviallyCopyableMove
+    value: 'false'

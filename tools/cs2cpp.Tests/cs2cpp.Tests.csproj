@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Cs2Cpp.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\cs2cpp\cs2cpp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 스냅샷 입출력: 테스트 프로젝트의 소스가 아니라 데이터 파일이다. -->
+    <Compile Remove="Cases\**\*.cs" />
+    <None Include="Cases\**\*.cs" />
+    <None Include="Expected\**\*.hpp" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,18 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and discussion
+    url: https://github.com/jacking75/MemoryPackCpp/discussions
+    about: >
+      Usage questions, design ideas, "is this the right way to map my C# type?", and
+      anything that is not yet a concrete bug or feature request. Start here if you are
+      not sure.
+  - name: Security vulnerability
+    url: https://github.com/jacking75/MemoryPackCpp/security/advisories/new
+    about: >
+      Report memory-safety or denial-of-service issues privately through a GitHub security
+      advisory. Please do not open a public issue for these.
+  - name: C# MemoryPack (upstream)
+    url: https://github.com/Cysharp/MemoryPack
+    about: >
+      For bugs in the C# library itself. This repository only implements its wire format
+      in C++.

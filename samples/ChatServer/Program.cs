@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using ChatServer;
 using MemoryPack;
 
-const int Port = 9001;
+const int Port = 25002;
 const int HeaderSize = 6;
 
 // ── Shared State ───────────────────────────────────────────────────────────────

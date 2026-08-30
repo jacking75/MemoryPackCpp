@@ -1,0 +1,65 @@
+# EditorConfig - https://editorconfig.org
+# Shared formatting rules for MemoryPackCpp.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# ---------------------------------------------------------------------------
+# C / C++ - the library, tests, samples and examples
+# ---------------------------------------------------------------------------
+[*.{c,cc,cpp,cxx,h,hh,hpp,hxx,inl,ipp}]
+indent_style = space
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# C# - FormatProbe, cs2cpp, sample servers
+# ---------------------------------------------------------------------------
+[*.{cs,csx}]
+indent_style = space
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# CMake
+# ---------------------------------------------------------------------------
+[{CMakeLists.txt,*.cmake,*.cmake.in}]
+indent_style = space
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# Data and markup
+# ---------------------------------------------------------------------------
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{json,jsonc,json5}]
+indent_size = 2
+
+# Markdown: two-space indent, and never trim trailing whitespace - two trailing
+# spaces are a hard line break in Markdown.
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+# ---------------------------------------------------------------------------
+# Windows-native project and script files keep CRLF
+# ---------------------------------------------------------------------------
+[*.{sln,vcxproj,vcxproj.filters,vcxproj.user,csproj,props,targets}]
+end_of_line = crlf
+
+[*.{bat,cmd}]
+end_of_line = crlf
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# Generated / fixture data - leave exactly as produced
+# ---------------------------------------------------------------------------
+[tests/fixtures/**]
+insert_final_newline = false
+trim_trailing_whitespace = false

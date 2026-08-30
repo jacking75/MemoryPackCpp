@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using CSharpServer;
 using MemoryPack;
 
-const int Port = 9000;
+const int Port = 25001;
 const int PacketHeaderSize = 6; // [2B packetId][4B bodyLength]
 
 var listener = new TcpListener(IPAddress.Loopback, Port);

@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(memorypack
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "MemoryPack Binary Wire Format compatible C++ header-only library"
-    HOMEPAGE_URL "https://github.com/heungbae/MemoryPackCpp"
+    HOMEPAGE_URL "https://github.com/jacking75/MemoryPackCpp"
     LANGUAGES CXX)
 
 # Detect whether this project is built standalone or via add_subdirectory/FetchContent.
@@ -15,6 +15,8 @@ endif()
 
 option(MEMORYPACK_BUILD_TESTS   "Build unit tests"                ${MEMORYPACK_IS_TOP_LEVEL})
 option(MEMORYPACK_BUILD_SAMPLES "Build sample clients"            OFF)
+option(MEMORYPACK_BUILD_BENCHMARKS "Build benchmarks"             OFF)
+option(MEMORYPACK_BUILD_EXAMPLES   "Build example programs"        OFF)
 option(MEMORYPACK_INSTALL       "Generate install/package rules"  ${MEMORYPACK_IS_TOP_LEVEL})
 
 # ── Header-only INTERFACE library ───────────────────────────────────────────────
@@ -38,6 +40,16 @@ endif()
 # the C++ sample clients.
 if(MEMORYPACK_BUILD_SAMPLES)
     add_subdirectory(samples)
+endif()
+
+# -- Benchmarks ------------------------------------------------------------------
+if(MEMORYPACK_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
+
+# -- Examples --------------------------------------------------------------------
+if(MEMORYPACK_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()
 
 # ── Install / package config ────────────────────────────────────────────────────

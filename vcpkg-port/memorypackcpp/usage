@@ -1,0 +1,13 @@
+memorypackcpp provides CMake targets:
+
+    find_package(memorypack CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE memorypack::memorypack)
+
+Then include the umbrella header:
+
+    #include "memorypack/memorypack.hpp"
+
+    struct LoginRequest { std::string userName; int32_t level; };
+    MEMORYPACK_DEFINE(LoginRequest, userName, level)
+
+Optional TCP framing helpers live in "memorypack/packet.hpp".

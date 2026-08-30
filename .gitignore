@@ -57,8 +57,10 @@ obj/
 
 # CMake
 build/
+build-*/
 out/
 cmake-build-*/
+dist/
 CMakeCache.txt
 CMakeFiles/
 CMakeUserPresets.json

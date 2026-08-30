@@ -1,0 +1,52 @@
+# clang-format configuration for MemoryPackCpp.
+# Google style with the project's indentation, width and pointer conventions.
+---
+Language: Cpp
+BasedOnStyle: Google
+
+# Project conventions
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AccessModifierOffset: -4
+PointerAlignment: Left
+DerivePointerAlignment: false
+ReferenceAlignment: Left
+
+# Keep small accessors on one line, but never collapse a real function body.
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+AllowShortLambdasOnASingleLine: All
+
+# Include order is meaningful in a header-only library (core.hpp must come
+# first in memorypack.hpp), so do not let the formatter reshuffle it.
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# C++23; older clang-format releases have no c++23 value, and Latest means
+# "the newest standard this binary knows about".
+Standard: Latest
+
+# Braces and spacing
+BreakBeforeBraces: Attach
+NamespaceIndentation: None
+FixNamespaceComments: true
+IndentCaseLabels: true
+SpacesBeforeTrailingComments: 2
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+PackConstructorInitializers: NextLine
+SeparateDefinitionBlocks: Leave
+
+# Comments are hand-wrapped to line up with the doc-comment style in the
+# headers; leave them alone.
+ReflowComments: false

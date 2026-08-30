@@ -1,24 +1,27 @@
 #pragma once
 #include "memorypack/memorypack.hpp"
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
-// ── Packet IDs (must match C# PacketId enum) ──────────────────────────────────
+// ── Packet IDs ─────────────────────────────────────────────────────────────────
 enum class PacketId : uint16_t {
-    LoginRequest    = 101,
-    LoginResponse   = 102,
-    RoomJoinRequest = 103,
-    RoomJoinResponse= 104,
-    RoomChat        = 105,
-    PrivateChat     = 106,
-    UserEntered     = 107,
-    UserLeft        = 108,
+    LoginRequest     = 101,
+    LoginResponse    = 102,
+    RoomJoinRequest  = 103,
+    RoomJoinResponse = 104,
+    RoomChat         = 105,
+    PrivateChat      = 106,
+    UserEntered      = 107,
+    UserLeft         = 108,
 };
 
-constexpr size_t PACKET_HEADER_SIZE = 6; // [2B packetId][4B bodyLength]
+// ── Packet Header: [2B packetId][4B bodyLength] ────────────────────────────────
+constexpr size_t PACKET_HEADER_SIZE = 6;
 
 // ── Packet Structs ─────────────────────────────────────────────────────────────
+// Member order MUST match C# [MemoryPackable] declaration order.
 
 struct LoginRequest {
     std::string username;
@@ -34,8 +37,8 @@ struct RoomJoinRequest {
 };
 
 struct RoomJoinResponse {
-    bool                      success = false;
-    std::vector<std::string>  existingUsers;
+    bool                     success = false;
+    std::vector<std::string> existingUsers;
 };
 
 struct RoomChat {
@@ -57,121 +60,33 @@ struct UserLeft {
     std::string username;
 };
 
-// ── IMemoryPackable Specializations ────────────────────────────────────────────
-namespace memorypack {
+// ── Serializer definitions ─────────────────────────────────────────────────────
+MEMORYPACK_DEFINE(LoginRequest, username)
+MEMORYPACK_DEFINE(LoginResponse, success, message)
+MEMORYPACK_DEFINE(RoomJoinRequest, roomName)
+MEMORYPACK_DEFINE(RoomJoinResponse, success, existingUsers)
+MEMORYPACK_DEFINE(RoomChat, senderName, message)
+MEMORYPACK_DEFINE(PrivateChat, senderName, targetName, message)
+MEMORYPACK_DEFINE(UserEntered, username)
+MEMORYPACK_DEFINE(UserLeft, username)
 
-template<> struct IMemoryPackable<LoginRequest> {
-    static void Serialize(MemoryPackWriter& w, const LoginRequest* v) {
-        if (!v) { w.WriteNullObjectHeader(); return; }
-        w.WriteObjectHeader(1);
-        w.WriteString(v->username);
+// ── Packet dispatch table ──────────────────────────────────────────────────────
+template<typename Handler>
+bool DispatchPacket(PacketId id, std::span<const uint8_t> body, Handler&& handler) {
+    switch (id) {
+    case PacketId::LoginRequest: { auto v = memorypack::Deserialize<LoginRequest>(body); handler(v); return true; }
+    case PacketId::LoginResponse: { auto v = memorypack::Deserialize<LoginResponse>(body); handler(v); return true; }
+    case PacketId::RoomJoinRequest: { auto v = memorypack::Deserialize<RoomJoinRequest>(body); handler(v); return true; }
+    case PacketId::RoomJoinResponse: { auto v = memorypack::Deserialize<RoomJoinResponse>(body); handler(v); return true; }
+    case PacketId::RoomChat: { auto v = memorypack::Deserialize<RoomChat>(body); handler(v); return true; }
+    case PacketId::PrivateChat: { auto v = memorypack::Deserialize<PrivateChat>(body); handler(v); return true; }
+    case PacketId::UserEntered: { auto v = memorypack::Deserialize<UserEntered>(body); handler(v); return true; }
+    case PacketId::UserLeft: { auto v = memorypack::Deserialize<UserLeft>(body); handler(v); return true; }
+    default: return false;
     }
-    static void Deserialize(MemoryPackReader& r, LoginRequest& v) {
-        auto [cnt, isNull] = r.ReadObjectHeader();
-        if (isNull) return;
-        if (cnt >= 1) { auto s = r.ReadString(); v.username = s.value_or(""); }
-    }
-};
+}
 
-template<> struct IMemoryPackable<LoginResponse> {
-    static void Serialize(MemoryPackWriter& w, const LoginResponse* v) {
-        if (!v) { w.WriteNullObjectHeader(); return; }
-        w.WriteObjectHeader(2);
-        w.WriteBool(v->success);
-        w.WriteString(v->message);
-    }
-    static void Deserialize(MemoryPackReader& r, LoginResponse& v) {
-        auto [cnt, isNull] = r.ReadObjectHeader();
-        if (isNull) return;
-        if (cnt >= 1) v.success = r.ReadBool();
-        if (cnt >= 2) { auto s = r.ReadString(); v.message = s.value_or(""); }
-    }
-};
+// ── Schema hash ────────────────────────────────────────────────────────────────
+// FNV-1a 64bit over "Type(0:CsType;1:CsType;...)\n" for every packet.
+inline constexpr uint64_t PACKET_SCHEMA_HASH = 0xE3D920B3AD21BFE8ULL;
 
-template<> struct IMemoryPackable<RoomJoinRequest> {
-    static void Serialize(MemoryPackWriter& w, const RoomJoinRequest* v) {
-        if (!v) { w.WriteNullObjectHeader(); return; }
-        w.WriteObjectHeader(1);
-        w.WriteString(v->roomName);
-    }
-    static void Deserialize(MemoryPackReader& r, RoomJoinRequest& v) {
-        auto [cnt, isNull] = r.ReadObjectHeader();
-        if (isNull) return;
-        if (cnt >= 1) { auto s = r.ReadString(); v.roomName = s.value_or(""); }
-    }
-};
-
-template<> struct IMemoryPackable<RoomJoinResponse> {
-    static void Serialize(MemoryPackWriter& w, const RoomJoinResponse* v) {
-        if (!v) { w.WriteNullObjectHeader(); return; }
-        w.WriteObjectHeader(2);
-        w.WriteBool(v->success);
-        w.WriteStringVector(v->existingUsers);
-    }
-    static void Deserialize(MemoryPackReader& r, RoomJoinResponse& v) {
-        auto [cnt, isNull] = r.ReadObjectHeader();
-        if (isNull) return;
-        if (cnt >= 1) v.success       = r.ReadBool();
-        if (cnt >= 2) v.existingUsers = r.ReadStringVector();
-    }
-};
-
-template<> struct IMemoryPackable<RoomChat> {
-    static void Serialize(MemoryPackWriter& w, const RoomChat* v) {
-        if (!v) { w.WriteNullObjectHeader(); return; }
-        w.WriteObjectHeader(2);
-        w.WriteString(v->senderName);
-        w.WriteString(v->message);
-    }
-    static void Deserialize(MemoryPackReader& r, RoomChat& v) {
-        auto [cnt, isNull] = r.ReadObjectHeader();
-        if (isNull) return;
-        if (cnt >= 1) { auto s = r.ReadString(); v.senderName = s.value_or(""); }
-        if (cnt >= 2) { auto s = r.ReadString(); v.message    = s.value_or(""); }
-    }
-};
-
-template<> struct IMemoryPackable<PrivateChat> {
-    static void Serialize(MemoryPackWriter& w, const PrivateChat* v) {
-        if (!v) { w.WriteNullObjectHeader(); return; }
-        w.WriteObjectHeader(3);
-        w.WriteString(v->senderName);
-        w.WriteString(v->targetName);
-        w.WriteString(v->message);
-    }
-    static void Deserialize(MemoryPackReader& r, PrivateChat& v) {
-        auto [cnt, isNull] = r.ReadObjectHeader();
-        if (isNull) return;
-        if (cnt >= 1) { auto s = r.ReadString(); v.senderName = s.value_or(""); }
-        if (cnt >= 2) { auto s = r.ReadString(); v.targetName = s.value_or(""); }
-        if (cnt >= 3) { auto s = r.ReadString(); v.message    = s.value_or(""); }
-    }
-};
-
-template<> struct IMemoryPackable<UserEntered> {
-    static void Serialize(MemoryPackWriter& w, const UserEntered* v) {
-        if (!v) { w.WriteNullObjectHeader(); return; }
-        w.WriteObjectHeader(1);
-        w.WriteString(v->username);
-    }
-    static void Deserialize(MemoryPackReader& r, UserEntered& v) {
-        auto [cnt, isNull] = r.ReadObjectHeader();
-        if (isNull) return;
-        if (cnt >= 1) { auto s = r.ReadString(); v.username = s.value_or(""); }
-    }
-};
-
-template<> struct IMemoryPackable<UserLeft> {
-    static void Serialize(MemoryPackWriter& w, const UserLeft* v) {
-        if (!v) { w.WriteNullObjectHeader(); return; }
-        w.WriteObjectHeader(1);
-        w.WriteString(v->username);
-    }
-    static void Deserialize(MemoryPackReader& r, UserLeft& v) {
-        auto [cnt, isNull] = r.ReadObjectHeader();
-        if (isNull) return;
-        if (cnt >= 1) { auto s = r.ReadString(); v.username = s.value_or(""); }
-    }
-};
-
-} // namespace memorypack

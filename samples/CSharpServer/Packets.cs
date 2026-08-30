@@ -89,12 +89,19 @@ public partial class IntArrayPacket
     public List<long>? LongArray { get; set; }
 }
 
-// C++ sends C fixed arrays as collections — C# sees them as List<T>
+// C++ sends C fixed arrays as collections — C# sees them as List<T>.
+// The // [cpp:fixed_array(size, CONST)] annotations tell tools/cs2cpp to emit a
+// C array plus a count variable on the C++ side instead of a std::vector, which
+// is what game code usually wants for fixed slots. The wire format is identical.
 [MemoryPackable]
 public partial class SkillSlotData
 {
     public int PlayerId { get; set; }
+
+    // [cpp:fixed_array(8, MAX_SKILLS)]
     public List<int>? SkillIds { get; set; }
+
+    // [cpp:fixed_array(8, MAX_SKILLS)]
     public List<float>? Cooldowns { get; set; }
 }
 
@@ -102,7 +109,11 @@ public partial class SkillSlotData
 public partial class MapTileRow
 {
     public int RowIndex { get; set; }
+
+    // [cpp:fixed_array(64, MAX_TILES)]
     public List<byte>? Tiles { get; set; }
+
+    // [cpp:fixed_array(64, MAX_TILES)]
     public List<short>? Heights { get; set; }
 }
 
@@ -110,8 +121,14 @@ public partial class MapTileRow
 public partial class MixedFormatPacket
 {
     public int Id { get; set; }
+
     public List<int>? DynamicScores { get; set; }    // from C++ vector
+
+    // [cpp:fixed_array(4, MAX_BONUSES)]
     public List<int>? FixedBonuses { get; set; }     // from C++ int32_t[]
+
+    // [cpp:fixed_array(16, MAX_TAG_LEN)]
     public List<sbyte>? TagBytes { get; set; }       // from C++ int8_t[] (char)
+
     public double Multiplier { get; set; }
 }

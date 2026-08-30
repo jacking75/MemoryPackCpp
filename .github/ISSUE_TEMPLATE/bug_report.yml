@@ -1,0 +1,134 @@
+name: Bug report
+description: Something is broken - wrong bytes, a crash, a build failure, or values that do not survive a round trip.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a report.
+
+        If this is a **wire-format incompatibility** (C# and C++ disagree on the bytes),
+        the hex dumps at the bottom of this form are the most valuable thing you can give
+        us - please fill them in.
+
+        Do **not** report security vulnerabilities here. See
+        [SECURITY.md](https://github.com/jacking75/MemoryPackCpp/blob/main/SECURITY.md)
+        for the private reporting process.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: >
+        What did you expect, and what did you get instead? Include the exact error message,
+        assertion, `MemoryPackError` value, or compiler diagnostic if there was one.
+      placeholder: |
+        Deserializing a C# `List<MyStruct?>` into std::vector<std::optional<MyStruct>>
+        stops after the first element and the reader reports "unexpected end of input".
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction (C# type + C++ struct)
+      description: >
+        The smallest pair of definitions that shows the problem. Include the full
+        `[MemoryPackable]` C# declaration with member order and attributes intact, the
+        matching C++ struct and its `IMemoryPackable` specialization (or the `cs2cpp`
+        output), and the calling code.
+      render: text
+      placeholder: |
+        // C#
+        [MemoryPackable]
+        public partial class LoginRequest
+        {
+            public string UserName { get; set; }
+            public int Level { get; set; }
+        }
+
+        var bytes = MemoryPackSerializer.Serialize(new LoginRequest { UserName = "abc", Level = 7 });
+
+        // C++
+        struct LoginRequest {
+            std::string userName;
+            int32_t level;
+        };
+        // IMemoryPackable specialization ...
+
+        memorypack::MemoryPackReader r(bytes.data(), bytes.size());
+        LoginRequest v{};
+        memorypack::IMemoryPackable<LoginRequest>::Deserialize(r, v);
+    validations:
+      required: true
+
+  - type: input
+    id: compiler
+    attributes:
+      label: Compiler and version
+      description: Output of `cl`, `g++ --version` or `clang++ --version`, plus the C++ standard flag used.
+      placeholder: "MSVC 19.44 (VS 2022 17.14), /std:c++latest"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows (x64)
+        - Windows (ARM64)
+        - Linux (x64)
+        - Linux (ARM64)
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: memorypack-version
+    attributes:
+      label: MemoryPack (C#) version
+      description: >
+        The `MemoryPack` NuGet package version on the C# side, from your `.csproj`.
+        Write "not applicable" if no C# is involved.
+      placeholder: "1.21.4"
+    validations:
+      required: true
+
+  - type: input
+    id: library-version
+    attributes:
+      label: MemoryPackCpp version or commit
+      placeholder: "0.2.0, or commit a855f90"
+    validations:
+      required: false
+
+  - type: textarea
+    id: bytes
+    attributes:
+      label: Expected vs actual bytes (optional, but decisive for format bugs)
+      description: >
+        Hex dump of what C# produced (`MemoryPackSerializer.Serialize`) and what
+        MemoryPackCpp produced for the same logical value. Say which is which and what
+        value produced them.
+      render: text
+      placeholder: |
+        value: LoginRequest { UserName = "abc", Level = 7 }
+
+        C#  (expected): 02 FC FF FF FF 03 00 00 00 61 62 63 07 00 00 00
+        C++ (actual)  : 02 03 00 00 00 61 62 63 07 00 00 00
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >
+        Non-default `ReaderOptions`, custom buffer mode, sanitizer output, a link to a
+        repository that reproduces it, or a `FormatProbe` fixture case you already wrote.
+    validations:
+      required: false

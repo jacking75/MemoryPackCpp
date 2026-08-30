@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Amalgamate single header and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build single-header amalgamation
+        id: amalgamate
+        shell: bash
+        run: |
+          if [ ! -f tools/amalgamate.py ]; then
+            echo "::notice::tools/amalgamate.py does not exist yet - publishing the release without an amalgamated header."
+            echo "produced=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p dist
+          # Accept either the --output flag or a single positional argument.
+          python tools/amalgamate.py --output dist/memorypack.hpp \
+            || python tools/amalgamate.py dist/memorypack.hpp
+          if [ -s dist/memorypack.hpp ]; then
+            echo "produced=true" >> "$GITHUB_OUTPUT"
+            wc -c dist/memorypack.hpp
+          else
+            echo "::error::tools/amalgamate.py ran but produced no dist/memorypack.hpp"
+            exit 1
+          fi
+
+      - name: Sanity-compile the amalgamated header
+        if: steps.amalgamate.outputs.produced == 'true'
+        run: |
+          printf '#include "memorypack.hpp"\nint main() { return 0; }\n' > /tmp/amalgam_tu.cpp
+          g++ -std=c++23 -I dist -Wall -Wextra -c /tmp/amalgam_tu.cpp -o /tmp/amalgam_tu.o
+
+      - name: Create release (with amalgamated header)
+        if: steps.amalgamate.outputs.produced == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/memorypack.hpp
+          generate_release_notes: true
+
+      - name: Create release
+        if: steps.amalgamate.outputs.produced != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

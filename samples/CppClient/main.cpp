@@ -22,7 +22,7 @@
 #endif
 
 static constexpr const char* SERVER_IP   = "127.0.0.1";
-static constexpr uint16_t    SERVER_PORT = 9000;
+static constexpr uint16_t    SERVER_PORT = 25001;
 
 // ── Network Helpers ────────────────────────────────────────────────────────────
 bool recv_exact(socket_t sock, uint8_t* buf, size_t len) {
@@ -399,11 +399,11 @@ bool test_mixed_format(socket_t sock) {
     MixedFormatPacket req;
     req.id = 42;
     req.dynamicScores = {100, 200, 300, 400, 500};           // vector
-    req.bonusCount = 3;                                       // use 3 of 4 slots
+    req.fixedBonusCount = 3;                                       // use 3 of 4 slots
     req.fixedBonuses[0] = 10; req.fixedBonuses[1] = 20; req.fixedBonuses[2] = 30;
     const char* tagStr = "HELLO";
-    req.tagLength = static_cast<int32_t>(std::strlen(tagStr));
-    std::memcpy(req.tag, tagStr, req.tagLength);              // char array
+    req.tagByteCount = static_cast<int32_t>(std::strlen(tagStr));
+    std::memcpy(req.tagBytes, tagStr, req.tagByteCount);              // char array
     req.multiplier = 2.5;
 
     std::cout << "[SEND] MixedFormatPacket: id=" << req.id
@@ -413,12 +413,12 @@ bool test_mixed_format(socket_t sock) {
         std::cout << req.dynamicScores[i];
     }
     std::cout << "], fixedBonuses(C arr)=[";
-    for (int i = 0; i < req.bonusCount; ++i) {
+    for (int i = 0; i < req.fixedBonusCount; ++i) {
         if (i) std::cout << ",";
         std::cout << req.fixedBonuses[i];
     }
     std::cout << "], tag(char arr)=\"";
-    for (int i = 0; i < req.tagLength; ++i) std::cout << (char)req.tag[i];
+    for (int i = 0; i < req.tagByteCount; ++i) std::cout << (char)req.tagBytes[i];
     std::cout << "\", multiplier=" << req.multiplier << "\n";
 
     auto body = memorypack::Serialize(req);
@@ -435,12 +435,12 @@ bool test_mixed_format(socket_t sock) {
         std::cout << resp.dynamicScores[i];
     }
     std::cout << "], fixedBonuses(C arr)=[";
-    for (int i = 0; i < resp.bonusCount; ++i) {
+    for (int i = 0; i < resp.fixedBonusCount; ++i) {
         if (i) std::cout << ",";
         std::cout << resp.fixedBonuses[i];
     }
     std::cout << "], tag(char arr)=\"";
-    for (int i = 0; i < resp.tagLength; ++i) std::cout << (char)resp.tag[i];
+    for (int i = 0; i < resp.tagByteCount; ++i) std::cout << (char)resp.tagBytes[i];
     std::cout << "\", multiplier=" << resp.multiplier << "\n";
     return true;
 }

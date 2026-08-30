@@ -19,7 +19,7 @@ static constexpr const wchar_t* WND_CLASS = L"ChatClientWnd";
 static constexpr const wchar_t* WND_TITLE = L"MemoryPack Chat Client";
 static constexpr int CLIENT_W = 740, CLIENT_H = 490;
 static constexpr const char* SERVER_IP   = "127.0.0.1";
-static constexpr uint16_t    SERVER_PORT = 9001;
+static constexpr uint16_t    SERVER_PORT = 25002;
 
 enum CtrlId {
     ID_EDIT_USERNAME = 101, ID_BTN_LOGIN,

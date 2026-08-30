@@ -1,0 +1,87 @@
+name: Feature request
+description: A C# type or MemoryPack scenario this library cannot handle yet.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        MemoryPackCpp exists to read and write exactly what C# MemoryPack reads and writes.
+        The most useful feature requests therefore name a **concrete C# type or scenario**
+        that does not work today, rather than an abstract capability.
+
+  - type: textarea
+    id: unsupported
+    attributes:
+      label: The C# type or scenario that is unsupported
+      description: >
+        The `[MemoryPackable]` declaration, collection type, attribute, or serializer
+        setting that MemoryPackCpp cannot currently handle. Include the attributes
+        (`[MemoryPackUnion]`, `[MemoryPackOrder]`, `[MemoryPackAllowSerialize]`, ...) and,
+        if you have them, the bytes C# emits for a sample value.
+      render: text
+      placeholder: |
+        [MemoryPackable]
+        public partial class Inventory
+        {
+            public Dictionary<int, List<ItemStack>> Slots { get; set; }
+            public ReadOnlyMemory<byte> Blob { get; set; }
+        }
+
+        // Serialize(new Inventory { ... }) produces:
+        // 02 02 00 00 00 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: >
+        What are you building, and what does the missing support block? Is there a
+        workaround you are using today, and what does it cost you (extra copies, a hand
+        written adapter, a changed C# contract)?
+      placeholder: >
+        Our C# game server already ships this packet to Unity clients and we cannot change
+        the contract. Today we hand-write the reader for this one type, which we have to
+        keep in sync manually every time the C# side changes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: mapping
+    attributes:
+      label: Proposed C++ mapping
+      description: >
+        How should this look on the C++ side - the struct/field types, the reader and
+        writer calls, and any new API you think is needed. A rough sketch is fine; what
+        matters is that the byte layout matches what C# emits.
+      render: text
+      placeholder: |
+        struct Inventory {
+            std::unordered_map<int32_t, std::vector<ItemStack>> slots;
+            std::vector<uint8_t> blob;
+        };
+
+        // Writer: WriteObjectHeader(2);
+        //         WriteDictionary(v->slots);   // [4B count][key,value]...
+        //         WriteBytes(v->blob);         // treated as a byte collection
+    validations:
+      required: false
+
+  - type: input
+    id: memorypack-version
+    attributes:
+      label: MemoryPack (C#) version
+      description: The version whose behavior should be matched.
+      placeholder: "1.21.4"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to open a pull request for this (including a `tools/FormatProbe` fixture case).
+          required: false

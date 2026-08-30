@@ -1,0 +1,75 @@
+# Normalize line endings: Git stores LF, checkout follows the rules below.
+* text=auto eol=lf
+
+# ---------------------------------------------------------------------------
+# Source files - explicit LF
+# ---------------------------------------------------------------------------
+*.c        text eol=lf
+*.cc       text eol=lf
+*.cpp      text eol=lf
+*.cxx      text eol=lf
+*.h        text eol=lf
+*.hh       text eol=lf
+*.hpp      text eol=lf
+*.hxx      text eol=lf
+*.inl      text eol=lf
+*.ipp      text eol=lf
+*.cs       text eol=lf
+*.cmake    text eol=lf
+*.md       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.json     text eol=lf
+*.txt      text eol=lf
+*.sh       text eol=lf
+CMakeLists.txt text eol=lf
+
+# ---------------------------------------------------------------------------
+# Windows-native files - Visual Studio and cmd.exe want CRLF
+# ---------------------------------------------------------------------------
+*.sln              text eol=crlf
+*.vcxproj          text eol=crlf
+*.vcxproj.filters  text eol=crlf
+*.vcxproj.user     text eol=crlf
+*.csproj           text eol=crlf
+*.props            text eol=crlf
+*.targets          text eol=crlf
+*.bat              text eol=crlf
+*.cmd              text eol=crlf
+*.ps1              text eol=crlf
+
+# ---------------------------------------------------------------------------
+# Binary files - never diffed, never line-ending converted
+# ---------------------------------------------------------------------------
+*.bin      binary
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.pdf      binary
+*.zip      binary
+*.dll      binary
+*.exe      binary
+*.lib      binary
+*.pdb      binary
+*.so       binary
+*.dylib    binary
+
+# Golden wire-format fixtures produced by tools/FormatProbe. These are the
+# byte-for-byte reference output of the real C# MemoryPack library: any
+# transformation at all corrupts them.
+tests/fixtures/*.bin binary
+
+# ---------------------------------------------------------------------------
+# Linguist hints - keep the language breakdown honest
+# ---------------------------------------------------------------------------
+*.hpp linguist-language=C++
+*.inl linguist-language=C++
+*.ipp linguist-language=C++
+*.h   linguist-language=C++
+
+# Generated, vendored or non-authored content excluded from language stats.
+tests/fixtures/**   linguist-generated=true
+samples/**          linguist-documentation=true
+examples/**         linguist-documentation=true
