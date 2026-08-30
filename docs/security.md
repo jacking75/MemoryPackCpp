@@ -184,9 +184,9 @@ clang++ -std=c++23 -g -O1 -Iinclude \
 ./fuzz_deserialize -max_total_time=600
 ```
 
-CI runs it weekly via `.github/workflows/fuzz.yml`, and every push builds the test
-suite under ASan/UBSan. A crash, a sanitizer report, or an unbounded allocation is
-treated as a bug.
+There is no hosted CI in this repository, so run it yourself when you touch the
+reader — a ten-minute session is enough to shake out an obvious regression. A
+crash, a sanitizer report, or an unbounded allocation is a bug.
 
 If you find a crashing input, please attach the reproducer file to your report.
 

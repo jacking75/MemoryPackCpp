@@ -202,7 +202,8 @@ dotnet run --project tools/cs2cpp -- samples/ChatServer/Packets.cs \
     -o samples/ChatClient/packets.hpp
 ```
 
-and check it in CI so the two cannot drift:
+`--check` regenerates in memory and compares instead of writing, so it fails when
+the header has drifted from the C# definition. Run it after editing either side:
 
 ```bash
 dotnet run --project tools/cs2cpp -- samples/ChatServer/Packets.cs \

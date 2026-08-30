@@ -123,8 +123,8 @@ dotnet run --project tools/FormatProbe -- check-cpp <cppOutputDir>
 ```
 
 `generate` deletes stale `.bin` files, so a renamed case cannot linger. `verify` exits
-with code 1 on any mismatch, which is how CI notices that an upstream MemoryPack
-release changed the format.
+with code 1 on any mismatch, which is how you notice that an upstream MemoryPack
+release changed the format. Run it after any MemoryPack package upgrade.
 
 Rules for fixtures:
 
@@ -186,8 +186,9 @@ Headers must compile clean at the highest warning levels on every supported comp
 ```
 
 A pull request that introduces a new warning will not be merged — including warnings
-that only appear on a compiler you do not have locally. If CI shows a warning you
-cannot reproduce, say so in the pull request and we will work it out together;
+that only appear on a compiler you do not have locally. There is no hosted CI here,
+so say in the pull request which compilers you actually built with; if a reviewer
+hits a warning you cannot reproduce, we will work it out together.
 `#pragma warning(disable: ...)` is a last resort and needs a comment explaining why.
 
 Static analysis configuration lives in `.clang-tidy`. It is advisory
@@ -202,8 +203,10 @@ explained.
   the fix; features get tests covering the happy path, the null case, and the truncated
   or malformed input case.
 - **Regenerate fixtures if the wire format changed** — see above.
-- **CI must be green.** Do not ask for review on a red pull request; mark it as a draft
-  instead.
+- **Run the verification checklist before asking for review.** There is no hosted CI,
+  so the checks in [README.md](README.md#full-verification) are the safety net: build
+  and `ctest`, `FormatProbe verify`, the `check-cpp` reverse direction, and
+  `cs2cpp --check`. Say in the pull request which ones you ran and on what.
 - **Update the docs.** If you change public API, update `README.md`, the header doc
   comment, and `CLAUDE.md` where it describes the affected area.
 - **Do not bump the project version** in `CMakeLists.txt`. Releases are cut by the

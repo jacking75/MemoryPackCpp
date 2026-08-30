@@ -1,6 +1,5 @@
 # MemoryPackCpp
 
-[![CI](https://github.com/jacking75/MemoryPackCpp/actions/workflows/ci.yml/badge.svg)](https://github.com/jacking75/MemoryPackCpp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue)](#requirements)
 [![Header-only](https://img.shields.io/badge/header--only-yes-brightgreen)](#installation)
@@ -30,7 +29,7 @@ members in the same order, and the bytes match.
 
 **How we know they match.** [`tools/FormatProbe`](tools/FormatProbe) serializes
 53 cases with the actual C# MemoryPack package and commits the bytes to
-[`tests/fixtures/`](tests/fixtures). Every CI run asserts both directions:
+[`tests/fixtures/`](tests/fixtures). The test suite asserts both directions:
 
 - the C++ reader decodes those C# bytes to the expected values, **and**
 - the C++ writer re-emits byte-identical output, **and**
@@ -38,7 +37,8 @@ members in the same order, and the bytes match.
 
 That covers unions, unmanaged structs with padding, `Nullable<T>`, surrogate
 pairs, `Guid`/`DateTime`, the VersionTolerant layout, and every length-encoding
-edge case. If a byte drifts, a test goes red.
+edge case. If a byte drifts, a test fails. See
+[Building and testing](#building-and-testing) for the commands.
 
 ---
 
@@ -99,8 +99,7 @@ find_package(memorypack CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE memorypack::memorypack)
 ```
 
-Or grab the **single-header build** from a
-[release](https://github.com/jacking75/MemoryPackCpp/releases), or generate it:
+Or generate a **single-header build** and drop that one file into your tree:
 
 ```bash
 python tools/amalgamate.py --include-packet -o dist/memorypack.hpp
@@ -241,11 +240,47 @@ Regenerate the fixtures (needs the .NET 10 SDK):
 
 ```bash
 dotnet run --project tools/FormatProbe -- generate tests/fixtures   # capture C# bytes
-dotnet run --project tools/FormatProbe -- verify   tests/fixtures   # CI: detect drift
+dotnet run --project tools/FormatProbe -- verify   tests/fixtures   # detect upstream drift
 ```
 
 Other options: `-DMEMORYPACK_BUILD_SAMPLES=ON`, `-DMEMORYPACK_BUILD_BENCHMARKS=ON`,
 `-DMEMORYPACK_BUILD_EXAMPLES=ON`.
+
+### Full verification
+
+There is no hosted CI in this repository, so this is the checklist to run before
+trusting a change. Everything here is reproducible locally.
+
+```bash
+# 1. Library, tests, samples and examples, with warnings as errors
+cmake -B build -DCMAKE_BUILD_TYPE=Release       -DMEMORYPACK_BUILD_TESTS=ON -DMEMORYPACK_BUILD_SAMPLES=ON       -DMEMORYPACK_BUILD_EXAMPLES=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+
+# 2. The committed fixtures still match the installed C# MemoryPack
+dotnet run --project tools/FormatProbe -c Release -- verify tests/fixtures
+
+# 3. C# can read what C++ produced (the reverse direction)
+./build/tests/memorypack_interop_tests "" build/cpp-fixtures
+dotnet run --project tools/FormatProbe -c Release -- check-cpp build/cpp-fixtures
+
+# 4. The generated sample headers have not drifted from the C# definitions
+dotnet test tools/cs2cpp.Tests -c Release
+dotnet run --project tools/cs2cpp -c Release --     samples/CSharpServer/Packets.cs -o samples/CppClient/packets.hpp --check
+dotnet run --project tools/cs2cpp -c Release --     samples/ChatServer/Packets.cs -o samples/ChatClient/packets.hpp --check
+```
+
+Optional, and worth running when touching the reader:
+
+```bash
+# Fuzz the deserializer under ASan/UBSan
+clang++ -std=c++23 -g -O1 -Iinclude     -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all     tests/fuzz/fuzz_deserialize.cpp -o fuzz_deserialize
+./fuzz_deserialize -max_total_time=600
+```
+
+The samples are also end-to-end tests: start `CSharpServer` and run `CppClient`,
+or start `CppServer` and run `CsClient` - both assert their results and exit
+non-zero on a mismatch.
 
 ---
 

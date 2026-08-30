@@ -1,8 +1,9 @@
 # C# to C++ Type Mapping
 
-Every mapping in the "verified" column is checked byte-for-byte on every CI run
-against output captured from the real C# MemoryPack library. The fixture name
-tells you where to look in [`tests/fixtures/report.txt`](../tests/fixtures/report.txt).
+Every mapping in the "verified" column is checked byte-for-byte by
+`tests/interop_tests.cpp` against output captured from the real C# MemoryPack
+library. The fixture name tells you where to look in
+[`tests/fixtures/report.txt`](../tests/fixtures/report.txt).
 
 Legend: ✅ verified against C# · 🚧 works, but not byte-verified · ❌ unsupported
 
@@ -170,4 +171,5 @@ The fixture harness makes this cheap and safe:
 5. Add the case to `tests/interop_tests.cpp` and to the `check-cpp` validation in
    `tools/FormatProbe/Program.cs`.
 
-Both directions are then enforced forever by CI.
+Both directions are then covered by `ctest`, so a later change cannot silently
+break the mapping.

@@ -6,9 +6,9 @@ library (version **1.21.4**).
 
 Every hex dump below was **captured from actual C# output** by
 [`tools/FormatProbe`](../tools/FormatProbe), committed under
-[`tests/fixtures/`](../tests/fixtures), and is replayed on every CI run by
+[`tests/fixtures/`](../tests/fixtures), and is replayed by
 `tests/interop_tests.cpp`. Nothing here is inferred from documentation — if a
-byte in this document is wrong, a test fails.
+byte in this document is wrong, that test fails.
 
 Regenerate the fixtures and the raw report with:
 

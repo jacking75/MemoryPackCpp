@@ -1,7 +1,8 @@
 # MemoryPackCpp 발전 로드맵 — 상용 게임 서버 적용 · 오픈소스 성장
 
 > 작성: 2026-08-30 · 기준 커밋: `a855f90` (main)
-> **갱신: 2026-08-30 — §10의 1~14번 작업을 모두 수행하여 v0.2.0으로 반영 완료.**
+> **갱신: 2026-08-31 — §10의 1~14번 작업을 반영해 v0.2.0 완료.**
+> 단, 5번(CI)은 사용자 요청으로 호스팅 CI 대신 로컬 검증 체크리스트로 대체했다.
 > 아래 본문은 작업 착수 시점의 계획 그대로 남겨 두고, 각 항목의 결과를 §0.5 "완료 현황"에 정리했다.
 
 ## 0.5. 완료 현황 (v0.2.0)
@@ -12,14 +13,14 @@
 | 2 | 부록 A 문서/설정 정정 | ✅ | URL·버전·unmanaged struct 설명·String 예시·포트(25001/25002)·헤더 ASCII화 |
 | 3 | `tools/FormatProbe` + 픽스처 | ✅ | 실제 MemoryPack 1.21.4로 **53개 픽스처** 생성, 미확정 포맷 전부 실측 확정 |
 | 4 | interop 테스트 하니스 | ✅ | `interop_tests.cpp` 289개 체크. C++→C# 역방향은 `check-cpp` 22건 |
-| 5 | CI 1차 | ✅ | `.github/workflows/ci.yml` 11개 잡 + fuzz.yml + release.yml |
+| 5 | CI 1차 | ⬜ | 요청에 따라 호스팅 CI는 두지 않음. 대신 README "Full verification"에 동일한 검증(빌드·ctest·픽스처 양방향·생성기 드리프트·퍼징)을 로컬 명령으로 정리 |
 | 6 | 중첩 객체 컬렉션 + 공개 `Write/Read` | ✅ | `WriteCollection`/`ReadCollection`, `MemoryPackFormatter<T>` 디스패치 |
 | 7 | Union / Unmanaged / Nullable | ✅ | `std::variant`(wide tag 포함), `MEMORYPACK_UNMANAGED`, null 인코딩 4종 자동 선택 |
 | 8 | `MEMORYPACK_DEFINE` 매크로 | ✅ | 수동 특수화와 바이트 동일함을 테스트로 검증 |
 | 9 | no-exceptions + `std::expected` + 한도 + fuzz | ✅ | `_HAS_EXCEPTIONS=0` 빌드 실증, `ReaderOptions`, libFuzzer 하니스 |
 | 10 | 벤치마크 + 핫패스 최적화 | ✅ | Google Benchmark 23개 + memcpy 기준선. `docs/benchmarks.md` |
 | 11 | cs2cpp Roslyn 전환 | ✅ | 정규식→Roslyn, 타입 확장, 스냅샷 테스트 |
-| 12 | `packet.hpp` + 샘플 정비 | ✅ | 프레이밍 헬퍼 + `PacketFrameParser`, C++ 서버↔C# 클라이언트 쌍과 크로스플랫폼 콘솔 채팅 클라이언트 추가, 샘플 헤더를 cs2cpp 생성물로 일원화(CI `--check`), 포트 25001~25003 |
+| 12 | `packet.hpp` + 샘플 정비 | ✅ | 프레이밍 헬퍼 + `PacketFrameParser`, C++ 서버↔C# 클라이언트 쌍과 크로스플랫폼 콘솔 채팅 클라이언트 추가, 샘플 헤더를 cs2cpp 생성물로 일원화(`--check`로 드리프트 감지), 포트 25001~25003 |
 | 13 | 문서 체계 + 예제 | ✅ | 영문 README + `README.ko.md` + `docs/` 11종 + `examples/` |
 | 14 | 릴리스 준비 | ✅ | `CHANGELOG.md`, `tools/amalgamate.py`(단일 헤더), `vcpkg-port/` |
 
@@ -457,6 +458,9 @@ CHANGELOG.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md
 ---
 
 ## 10. 다음 세션 착수 순서 (구체 작업 단위)
+
+> 아래는 **작업 착수 시점의 계획 원문**이다. 실제 결과는 문서 맨 위 §0.5 를 볼 것.
+> 특히 5번(CI)은 사용자 요청으로 호스팅 CI 대신 로컬 검증 체크리스트로 대체했다.
 
 각 단위는 독립 커밋 가능하며 완료 조건을 만족해야 닫는다.
 

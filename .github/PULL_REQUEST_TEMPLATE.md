@@ -36,7 +36,9 @@ See CONTRIBUTING.md for the full expectations.
       non-English text) so MSVC does not emit C4819 on non-UTF-8 codepages.
 - [ ] Coding conventions followed: namespace `memorypack`, PascalCase types and methods,
       camelCase variables, UPPER_SNAKE_CASE constants, 4-space indent, `#pragma once`.
-- [ ] CI is green.
+- [ ] Verification checklist run (see `README.md`, "Full verification"): build +
+      `ctest`, `FormatProbe verify`, `check-cpp`, `cs2cpp --check`. There is no
+      hosted CI, so note below which of these you ran and on which compiler.
 
 ## How was this verified?
 

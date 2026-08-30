@@ -3,9 +3,9 @@
 ## MemoryPack (C#) versions
 
 The wire format is verified against a pinned MemoryPack package. The fixtures in
-[`tests/fixtures/`](../tests/fixtures) were captured from that exact version, and
-CI re-runs `FormatProbe verify` on every push so an upstream format change shows
-up as a failing job rather than as a production bug.
+[`tests/fixtures/`](../tests/fixtures) were captured from that exact version.
+Re-run `FormatProbe verify` after a package upgrade so an upstream format change
+shows up as a failing check rather than as a production bug.
 
 | MemoryPack | Status | Notes |
 |---|---|---|
@@ -50,18 +50,26 @@ C++23 is required — the library uses `std::span`, `if constexpr`, concepts,
 
 | Compiler | Minimum | Verified | Notes |
 |---|---|---|---|
-| MSVC | v143 (Visual Studio 2022) | **19.51 (VS 2026)** | build with `/std:c++latest` (or `/std:c++23preview`) and `/utf-8` |
-| GCC | 13 | CI matrix: 13, 14 | `-std=c++23` |
-| Clang | 16 | CI matrix: 17, 18 | `-std=c++23`; `std::expected` needs libc++ 17+ or libstdc++ 13+ |
-| Apple Clang | Xcode 15 | CI: macos-latest | |
+| MSVC | v143 (Visual Studio 2022) | **19.51 (VS 2026)** — built and tested | build with `/std:c++latest` (or `/std:c++23preview`) and `/utf-8` |
+| GCC | 13 | not yet built | `-std=c++23` |
+| Clang | 16 | not yet built | `-std=c++23`; `std::expected` needs libc++ 17+ or libstdc++ 13+ |
+| Apple Clang | Xcode 15 | not yet built | |
+
+> Only the MSVC column has actually been exercised. The code is written to the
+> other toolchains' warning sets (`-Wall -Wextra -Wpedantic -Werror -Wshadow
+> -Wconversion -Wsign-conversion`) and uses no MSVC-specific constructs, but that
+> is an expectation, not a measurement. If you build on GCC or Clang, a report
+> either way is welcome.
 
 If `<expected>` is unavailable, `MEMORYPACK_HAS_EXPECTED` is 0 and the
 `TryDeserialize` / `TrySerializeTo` API is simply not declared. Everything else
 works unchanged.
 
-### Verified locally
+### How this is verified
 
-The current tree was built and tested with:
+There is no hosted CI in this repository; the verification is the local checklist
+in the [README](../README.md#full-verification). The current tree was built and
+tested with:
 
 - MSVC 19.51.36248 (Visual Studio 2026 Community), Ninja, Debug and Release
 - CMake 4.3.1
@@ -76,11 +84,11 @@ The current tree was built and tested with:
 
 | Platform | Status |
 |---|---|
-| Windows x64 | ✅ verified locally and in CI |
-| Linux x64 (GCC, Clang) | CI |
-| macOS (Apple Clang) | CI |
-| 32-bit targets | supported — the bounds check is written so it cannot overflow on 32-bit `size_t` |
-| Big-endian (s390x) | CI job; all primitives, lengths and headers are byte-swapped automatically |
+| Windows x64 | ✅ built and tested (MSVC 19.51, Debug and Release) |
+| Linux x64 (GCC, Clang) | expected to work; not yet built |
+| macOS (Apple Clang) | expected to work; not yet built |
+| 32-bit targets | supported by design — the bounds check is written so it cannot overflow on 32-bit `size_t`; not yet built |
+| Big-endian | supported by design — all primitives, lengths and headers are byte-swapped automatically; not yet built |
 
 ### Big-endian caveat
 
@@ -97,10 +105,11 @@ individually if you need to support one.
 
 | Configuration | Supported |
 |---|---|
-| Exceptions enabled (default) | ✅ |
-| `-fno-exceptions` / `MEMORYPACK_NO_EXCEPTIONS` | ✅ — errors surface through the reader/writer error state and `std::expected` |
-| `-fno-rtti` | ✅ — no RTTI is used |
-| AddressSanitizer / UndefinedBehaviorSanitizer | ✅ — CI job |
+| Exceptions enabled (default) | ✅ built and tested |
+| `MEMORYPACK_NO_EXCEPTIONS` / `_HAS_EXCEPTIONS=0` | ✅ built and tested — errors surface through the reader/writer error state and `std::expected` |
+| `-fno-exceptions` (GCC/Clang spelling) | expected to work; the same code path, not yet built |
+| `-fno-rtti` | ✅ by construction — no RTTI is used |
+| AddressSanitizer / UndefinedBehaviorSanitizer | supported; run the fuzz harness in [docs/security.md](security.md#fuzzing) |
 | Static analysis (`clang-tidy`, MSVC `/analyze`) | configured via `.clang-tidy` |
 
 ---

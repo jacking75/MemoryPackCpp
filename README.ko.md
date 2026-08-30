@@ -1,6 +1,5 @@
 # MemoryPackCpp
 
-[![CI](https://github.com/jacking75/MemoryPackCpp/actions/workflows/ci.yml/badge.svg)](https://github.com/jacking75/MemoryPackCpp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue)](#요구-사항)
 [![Header-only](https://img.shields.io/badge/header--only-yes-brightgreen)](#설치)
@@ -29,7 +28,7 @@ MemoryPackCpp는 포맷 자체를 구현해서 그 문제를 없앤다. 같은 �
 
 **어떻게 보장하는가.** [`tools/FormatProbe`](tools/FormatProbe)가 실제 C#
 MemoryPack 패키지로 53개 케이스를 직렬화해 [`tests/fixtures/`](tests/fixtures)에
-바이트를 커밋한다. CI는 매 푸시마다 양방향을 모두 검증한다.
+바이트를 커밋한다. 테스트 스위트가 양방향을 모두 검증한다.
 
 - C++ 리더가 그 C# 바이트를 기대값으로 디코딩하고,
 - C++ 라이터가 **바이트 단위로 동일한** 출력을 다시 만들고,
@@ -37,7 +36,7 @@ MemoryPack 패키지로 53개 케이스를 직렬화해 [`tests/fixtures/`](test
 
 Union, 패딩 포함 unmanaged struct, `Nullable<T>`, 서로게이트 페어, `Guid`/`DateTime`,
 VersionTolerant 레이아웃, 길이 인코딩 경계까지 전부 포함된다. 바이트 하나라도
-어긋나면 테스트가 실패한다.
+어긋나면 테스트가 실패한다. 실행 방법은 [빌드와 테스트](#빌드와-테스트) 참고.
 
 ---
 
@@ -98,8 +97,7 @@ find_package(memorypack CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE memorypack::memorypack)
 ```
 
-[릴리스](https://github.com/jacking75/MemoryPackCpp/releases)의 **단일 헤더**를
-받거나 직접 생성해도 된다.
+**단일 헤더**를 만들어 그 파일 하나만 넣어도 된다.
 
 ```bash
 python tools/amalgamate.py --include-packet -o dist/memorypack.hpp
@@ -236,11 +234,47 @@ ctest --test-dir build --output-on-failure
 
 ```bash
 dotnet run --project tools/FormatProbe -- generate tests/fixtures   # C# 바이트 캡처
-dotnet run --project tools/FormatProbe -- verify   tests/fixtures   # CI: 포맷 변경 감지
+dotnet run --project tools/FormatProbe -- verify   tests/fixtures   # 상위 포맷 변경 감지
 ```
 
 그 외 옵션: `-DMEMORYPACK_BUILD_SAMPLES=ON`, `-DMEMORYPACK_BUILD_BENCHMARKS=ON`,
 `-DMEMORYPACK_BUILD_EXAMPLES=ON`
+
+### 전체 검증
+
+이 저장소에는 호스팅 CI가 없다. 변경을 신뢰하기 전에 아래를 로컬에서 돌린다.
+전부 재현 가능하다.
+
+```bash
+# 1. 라이브러리 + 테스트 + 샘플 + 예제 (경고를 오류로)
+cmake -B build -DCMAKE_BUILD_TYPE=Release       -DMEMORYPACK_BUILD_TESTS=ON -DMEMORYPACK_BUILD_SAMPLES=ON       -DMEMORYPACK_BUILD_EXAMPLES=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+
+# 2. 커밋된 픽스처가 설치된 C# MemoryPack 출력과 여전히 일치하는지
+dotnet run --project tools/FormatProbe -c Release -- verify tests/fixtures
+
+# 3. C++가 만든 바이트를 C#이 읽을 수 있는지 (역방향)
+./build/tests/memorypack_interop_tests "" build/cpp-fixtures
+dotnet run --project tools/FormatProbe -c Release -- check-cpp build/cpp-fixtures
+
+# 4. 생성된 샘플 헤더가 C# 정의와 어긋나지 않았는지
+dotnet test tools/cs2cpp.Tests -c Release
+dotnet run --project tools/cs2cpp -c Release --     samples/CSharpServer/Packets.cs -o samples/CppClient/packets.hpp --check
+dotnet run --project tools/cs2cpp -c Release --     samples/ChatServer/Packets.cs -o samples/ChatClient/packets.hpp --check
+```
+
+리더를 건드렸다면 추가로:
+
+```bash
+# ASan/UBSan 아래에서 역직렬화기 퍼징
+clang++ -std=c++23 -g -O1 -Iinclude     -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all     tests/fuzz/fuzz_deserialize.cpp -o fuzz_deserialize
+./fuzz_deserialize -max_total_time=600
+```
+
+샘플도 end-to-end 테스트다. `CSharpServer`를 띄우고 `CppClient`를 돌리거나,
+`CppServer`를 띄우고 `CsClient`를 돌리면 둘 다 결과를 검증하고 불일치 시
+0이 아닌 코드로 종료한다.
 
 ---
 

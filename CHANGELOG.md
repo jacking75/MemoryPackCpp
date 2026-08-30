@@ -29,7 +29,8 @@ longer asserted — it is **tested**, in both directions, on every push.
     the C++ tests by deserializing them in C#.
 - `tests/interop_tests.cpp`: replays every fixture and asserts that the C++ reader
   decodes it correctly **and** that the C++ writer re-emits byte-identical output.
-- CI jobs that run both directions, so a wire-format regression cannot merge.
+- A local verification checklist (see the README) that runs both directions, so a
+  wire-format regression is caught before it is committed.
 
 #### Type support
 
@@ -91,14 +92,15 @@ longer asserted — it is **tested**, in both directions, on every push.
 - `MemoryPackError` codes and `MemoryPackException` carrying the code and the byte
   offset of the failure.
 - `tests/fuzz/fuzz_deserialize.cpp` — a libFuzzer harness covering objects,
-  containers, unions, the raw reader API and the frame parser, run weekly in CI
-  under ASan/UBSan.
+  containers, unions, the raw reader API and the frame parser, to be run under
+  ASan/UBSan when touching the reader.
 
 #### Tooling and infrastructure
 
-- CI matrix: MSVC (Debug/Release), GCC 13/14, Clang 17/18, macOS, ASan/UBSan,
-  `-fno-exceptions`, big-endian s390x under QEMU, .NET builds, fixture
-  verification, generator drift check, and example compilation.
+- A documented verification checklist covering the Debug and Release builds,
+  `ctest`, fixture verification in both directions, the generator drift check and
+  the fuzz harness. This repository deliberately has no hosted CI, so those
+  commands are the safety net.
 - `tools/amalgamate.py` produces a single-header build.
 - Benchmarks (`-DMEMORYPACK_BUILD_BENCHMARKS=ON`) with a raw `memcpy` baseline.
 - Ten runnable, commented examples under `examples/`, each self-checking and
@@ -108,7 +110,7 @@ longer asserted — it is **tested**, in both directions, on every push.
   cross-platform console chat client, so the chat sample is no longer
   Windows-only).
 - The sample packet headers are now **generated** from the C# definitions by
-  `cs2cpp`, and CI fails if they drift (`--check`).
+  `cs2cpp`; `--check` reports drift without writing.
 - `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue and PR templates,
   `.editorconfig`, `.gitattributes`, `.clang-format`, `.clang-tidy`.
 - Documentation set under `docs/`: wire format (with real captured bytes), type

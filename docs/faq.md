@@ -11,13 +11,15 @@ MIT licensed and © Cysharp, Inc.
 Because the tests replay bytes produced by the real C# library.
 [`tools/FormatProbe`](../tools/FormatProbe) is a .NET program that references the
 actual MemoryPack NuGet package, serializes 53 cases, and writes the bytes to
-[`tests/fixtures/`](../tests/fixtures). CI then asserts three things on every push:
+[`tests/fixtures/`](../tests/fixtures). The test suite then asserts three things:
 
 1. the C++ reader decodes those bytes to the expected values,
 2. the C++ writer re-emits byte-identical output, and
 3. C# reads back what C++ produced (`FormatProbe check-cpp`).
 
 Nothing in the documentation is inferred — if a byte is wrong, a test fails.
+The commands are listed under "Full verification" in the
+[README](../README.md#full-verification).
 
 ---
 
@@ -126,9 +128,9 @@ and most console toolchains need. See [error-handling.md](error-handling.md).
 ### MSVC warns C4819 when I include the headers
 
 That warning means a source file contains bytes that are not valid in the current
-codepage. The library headers are **ASCII-only** specifically to avoid it, and CI
-enforces that. If you still see it, the file is one of yours — add `/utf-8` to
-your compile options, which is good practice regardless.
+codepage. The library headers are **ASCII-only** specifically to avoid it. If you
+still see it, the file is one of yours — add `/utf-8` to your compile options,
+which is good practice regardless.
 
 ### `MemoryPackWriter` used to be non-movable
 
@@ -190,7 +192,8 @@ Yes:
 python tools/amalgamate.py --include-packet -o dist/memorypack.hpp
 ```
 
-Releases also ship one as an attachment.
+The result is one self-contained file, byte-for-byte equivalent to including the
+umbrella header.
 
 ### What is not implemented?
 
@@ -203,5 +206,5 @@ used .NET types (`Version`, `Uri`, `BigInteger`, `BitArray`). See the end of
 The fixture harness makes it safe: describe the C# type in
 `tools/FormatProbe/Types.cs`, regenerate, read the real bytes, implement against
 them, and add the case to `tests/interop_tests.cpp`. Both directions are then
-enforced by CI forever. Details in
+covered by the test suite. Details in
 [type-mapping.md](type-mapping.md#adding-a-mapping).

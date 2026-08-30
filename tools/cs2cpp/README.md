@@ -45,7 +45,7 @@ cs2cpp <input...> [options]
 | `--nullable-strings` | 기본값은 호환성을 위해 `string?` → `std::string` 입니다. 이 플래그를 주면 `string?` → `std::optional<std::string>` 으로 바뀌고(널과 빈 문자열을 구분), `string`(non-nullable)은 그대로 `std::string` 입니다. |
 | `--dispatch` / `--no-dispatch` | 아래 “디스패치 테이블” 참고. 기본값은 `PacketId` enum 이 발견되면 자동 ON. |
 | `--emit-schema-hash-cs` | C# 쪽에 심을 `public const ulong PacketSchemaHash = 0x...;` 파일을 만듭니다. |
-| `--check` | CI 용. 아무것도 쓰지 않고 기존 파일과 비교합니다. 줄바꿈(CRLF/LF)은 무시합니다. |
+| `--check` | 드리프트 검사용. 아무것도 쓰지 않고 기존 파일과 비교합니다. 줄바꿈(CRLF/LF)은 무시합니다. |
 
 `--style=explicit` 처럼 `=` 로 붙여 쓰는 형태도 지원합니다.
 
@@ -58,7 +58,7 @@ dotnet run --project tools/cs2cpp -- samples/ChatServer/Packets.cs -o samples/Ch
 # 글롭 + 출력 디렉터리
 dotnet run --project tools/cs2cpp -- "samples/**/Packets.cs" -o build/generated --style explicit
 
-# CI 검사 (커밋된 헤더가 생성기 출력과 같은지 확인)
+# 드리프트 검사 (커밋된 헤더가 생성기 출력과 같은지 확인)
 dotnet run --project tools/cs2cpp -- samples/ChatServer/Packets.cs -o samples/ChatClient/packets.hpp --check
 ```
 
@@ -322,19 +322,24 @@ public static class PacketSchema
 }
 ```
 
-## CI 검사 (`--check`)
+## 생성물 드리프트 검사 (`--check`)
 
 `--check` 는 파일을 쓰지 않고, 생성 결과와 기존 파일을 비교해 다르면 unified diff 를
 찍고 exit code 1 로 끝납니다. 커밋된 헤더가 생성기 출력과 어긋나지 않는지 확인할 때 씁니다.
 
 ```bash
+dotnet run --project tools/cs2cpp -- samples/CSharpServer/Packets.cs \
+    -o samples/CppClient/packets.hpp --check
 dotnet run --project tools/cs2cpp -- samples/ChatServer/Packets.cs \
-    -o samples/ChatClient/packets.hpp --style explicit --no-dispatch --check
+    -o samples/ChatClient/packets.hpp --check
 ```
 
-> 참고: 현재 커밋된 `samples/CppClient/packets.hpp` 와 `samples/ChatClient/packets.hpp` 는
-> 사람이 손으로 다듬은 파일(설명 주석, 추가 정렬, `[cpp:fixed_array]` 어노테이션이 없는
-> `Packets.cs`)이라 `--check` 를 그대로 통과하지 않습니다.
+커밋된 `samples/CppClient/packets.hpp` 와 `samples/ChatClient/packets.hpp` 는 위 두 명령의
+**생성 결과 그대로**입니다(기본 옵션 = `--style macro`, `PacketId` enum 이 있으므로
+디스패치 테이블 포함). 손으로 고치지 말고 `Packets.cs` 를 고친 뒤 다시 생성하세요.
+
+이 저장소에는 호스팅 CI 가 없으므로, 어느 쪽이든 수정한 뒤에는 위 두 명령을 직접 돌려
+어긋나지 않았는지 확인해야 합니다.
 
 ## 테스트
 
