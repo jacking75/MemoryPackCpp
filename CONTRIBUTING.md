@@ -203,10 +203,17 @@ explained.
   the fix; features get tests covering the happy path, the null case, and the truncated
   or malformed input case.
 - **Regenerate fixtures if the wire format changed** — see above.
-- **Run the verification checklist before asking for review.** There is no hosted CI,
-  so the checks in [README.md](README.md#full-verification) are the safety net: build
-  and `ctest`, `FormatProbe verify`, the `check-cpp` reverse direction, and
-  `cs2cpp --check`. Say in the pull request which ones you ran and on what.
+- **Run `tools/verify.ps1` before asking for review, and paste its summary into
+  the pull request.** There is no hosted CI, so this script is the safety net —
+  see [README.md](README.md#full-verification) for what it covers (build and
+  `ctest`, `FormatProbe verify`, the `check-cpp` reverse direction, `cs2cpp
+  --check`, and the sample E2E pairs). `-Quick` skips the .NET-dependent and
+  E2E steps if you don't have the SDK; say which mode you ran.
+- **Enable the opt-in pre-push hook if you want a reminder.** `.githooks/pre-push`
+  runs `tools/verify.ps1 -Quick` before every push (see
+  [README.md](README.md#full-verification) for how to enable it). It is opt-in,
+  not required — this repo has no .NET SDK requirement to contribute C++-only
+  changes, and enforcing the hook would contradict that.
 - **Update the docs.** If you change public API, update `README.md`, the header doc
   comment, and `CLAUDE.md` where it describes the affected area.
 - **Do not bump the project version** in `CMakeLists.txt`. Releases are cut by the

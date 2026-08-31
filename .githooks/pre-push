@@ -1,0 +1,32 @@
+#!/bin/sh
+# Opt-in pre-push hook: runs the quick verification checklist before a push.
+#
+# Not installed by default - this repository does not require the .NET SDK to
+# contribute C++-only changes, and a mandatory hook would contradict that.
+# Enable it yourself with:
+#
+#   git config core.hooksPath .githooks
+#
+# Disable again with:
+#
+#   git config --unset core.hooksPath
+#
+# Runs the -Quick profile (skips the .NET-dependent and sample E2E steps) so
+# it stays fast enough for every push; run the full `tools/verify.ps1` by hand
+# before a pull request. Requires PowerShell (Windows PowerShell or pwsh).
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if command -v pwsh >/dev/null 2>&1; then
+    PWSH=pwsh
+elif command -v powershell.exe >/dev/null 2>&1; then
+    PWSH=powershell.exe
+else
+    echo "pre-push: no PowerShell found (pwsh or powershell.exe) - skipping tools/verify.ps1 -Quick." >&2
+    echo "pre-push: install PowerShell, or run 'git config --unset core.hooksPath' to disable this hook." >&2
+    exit 0
+fi
+
+"$PWSH" -NoProfile -File "$REPO_ROOT/tools/verify.ps1" -Quick

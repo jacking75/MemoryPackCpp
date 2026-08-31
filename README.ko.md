@@ -243,7 +243,22 @@ dotnet run --project tools/FormatProbe -- verify   tests/fixtures   # 상위 포
 ### 전체 검증
 
 이 저장소에는 호스팅 CI가 없다. 변경을 신뢰하기 전에 아래를 로컬에서 돌린다.
-전부 재현 가능하다.
+전부 재현 가능하며, [`tools/verify.ps1`](tools/verify.ps1)이 전부를 명령
+하나·종료 코드 하나로 실행한다:
+
+```powershell
+powershell -File tools/verify.ps1              # 전체
+powershell -File tools/verify.ps1 -Quick       # dotnet·샘플 E2E·ASan 건너뜀
+powershell -File tools/verify.ps1 -Asan        # ASan 빌드/테스트까지 추가
+```
+
+Visual Studio 개발 환경을 스스로 찾는다(평범한 셸에는 `cl.exe`도 `ninja.exe`도
+PATH에 없다) — 방금 연 터미널에서도 Developer PowerShell에서와 동일하게
+동작한다. 각 단계는 개별적으로 시간이 측정·보고되고, 앞선 단계가 실패해도
+나머지 단계를 계속 실행하므로 한 번 돌리면 무엇이 깨졌는지 전부 알 수 있다.
+
+무엇을 실행하는지 — 아래는 스크립트가 하는 일을 POSIX 셸/수동·부분 실행용으로
+풀어쓴 것이다:
 
 ```bash
 # 1. 라이브러리 + 테스트 + 샘플 + 예제 (경고를 오류로)
@@ -262,19 +277,26 @@ dotnet run --project tools/FormatProbe -c Release -- check-cpp build/cpp-fixture
 dotnet test tools/cs2cpp.Tests -c Release
 dotnet run --project tools/cs2cpp -c Release --     samples/CSharpServer/Packets.cs -o samples/CppClient/packets.hpp --check
 dotnet run --project tools/cs2cpp -c Release --     samples/ChatServer/Packets.cs -o samples/ChatClient/packets.hpp --check
+
+# 5. 샘플 end-to-end: 각 쌍은 스스로 결과를 검증하고 불일치 시 0이 아닌
+#    코드로 종료한다. verify.ps1은 서버 실행 → 리스닝 대기 → 클라이언트
+#    실행 → 서버 종료까지 자동화한다.
+#      CSharpServer + CppClient, 그리고 역방향인 CppServer + CsClient
 ```
 
 리더를 건드렸다면 추가로:
 
 ```bash
-# ASan/UBSan 아래에서 역직렬화기 퍼징
+# MSVC ASan (verify.ps1 -Asan이 이걸 한다 - Windows에서 추가 설치 불필요)
+cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo       -DMEMORYPACK_BUILD_TESTS=ON -DMEMORYPACK_SANITIZE=address
+cmake --build build-asan
+ctest --test-dir build-asan --output-on-failure
+
+# ASan/UBSan 아래에서 역직렬화기 퍼징 (clang+libFuzzer 필요 - Windows에서는
+# docs/security.md#fuzzing의 WSL 경로 참고)
 clang++ -std=c++23 -g -O1 -Iinclude     -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all     tests/fuzz/fuzz_deserialize.cpp -o fuzz_deserialize
 ./fuzz_deserialize -max_total_time=600
 ```
-
-샘플도 end-to-end 테스트다. `CSharpServer`를 띄우고 `CppClient`를 돌리거나,
-`CppServer`를 띄우고 `CsClient`를 돌리면 둘 다 결과를 검증하고 불일치 시
-0이 아닌 코드로 종료한다.
 
 ---
 

@@ -249,7 +249,24 @@ Other options: `-DMEMORYPACK_BUILD_SAMPLES=ON`, `-DMEMORYPACK_BUILD_BENCHMARKS=O
 ### Full verification
 
 There is no hosted CI in this repository, so this is the checklist to run before
-trusting a change. Everything here is reproducible locally.
+trusting a change. Everything here is reproducible locally, and
+[`tools/verify.ps1`](tools/verify.ps1) runs all of it as one command with one
+exit code:
+
+```powershell
+powershell -File tools/verify.ps1              # everything
+powershell -File tools/verify.ps1 -Quick       # skip dotnet, samples E2E and ASan
+powershell -File tools/verify.ps1 -Asan        # additionally build and test under ASan
+```
+
+It finds the Visual Studio developer environment itself (neither `cl.exe` nor
+`ninja.exe` is on `PATH` in a plain shell), so it runs the same way from a
+freshly opened terminal as from a Developer PowerShell. Each step is timed and
+reported independently, and the script runs every step even after an earlier
+one fails, so a single pass tells you everything that's broken.
+
+What it runs, in order - the commands below are what the script does, spelled
+out for POSIX shells or manual/partial runs:
 
 ```bash
 # 1. Library, tests, samples and examples, with warnings as errors
@@ -268,19 +285,36 @@ dotnet run --project tools/FormatProbe -c Release -- check-cpp build/cpp-fixture
 dotnet test tools/cs2cpp.Tests -c Release
 dotnet run --project tools/cs2cpp -c Release --     samples/CSharpServer/Packets.cs -o samples/CppClient/packets.hpp --check
 dotnet run --project tools/cs2cpp -c Release --     samples/ChatServer/Packets.cs -o samples/ChatClient/packets.hpp --check
+
+# 5. Sample end-to-end: each pair asserts its own results and exits non-zero
+#    on a mismatch. verify.ps1 automates starting the server, waiting for it
+#    to listen, running the client, and tearing the server down again.
+#      CSharpServer + CppClient, and the reverse direction, CppServer + CsClient
 ```
 
 Optional, and worth running when touching the reader:
 
 ```bash
-# Fuzz the deserializer under ASan/UBSan
+# MSVC ASan (verify.ps1 -Asan does this - no extra install on Windows)
+cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo       -DMEMORYPACK_BUILD_TESTS=ON -DMEMORYPACK_SANITIZE=address
+cmake --build build-asan
+ctest --test-dir build-asan --output-on-failure
+
+# Fuzz the deserializer under ASan/UBSan (needs clang+libFuzzer - see
+# docs/security.md#fuzzing for the WSL path used on Windows)
 clang++ -std=c++23 -g -O1 -Iinclude     -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all     tests/fuzz/fuzz_deserialize.cpp -o fuzz_deserialize
 ./fuzz_deserialize -max_total_time=600
 ```
 
-The samples are also end-to-end tests: start `CSharpServer` and run `CppClient`,
-or start `CppServer` and run `CsClient` - both assert their results and exit
-non-zero on a mismatch.
+To run `tools/verify.ps1 -Quick` automatically before every push, opt into the
+pre-push hook:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+This is opt-in, not required — contributing a C++-only change does not require
+the .NET SDK, and a mandatory hook would contradict that.
 
 ---
 
