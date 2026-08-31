@@ -294,11 +294,11 @@ struct VersionTolerantLong {
 
 // ── Serializer definitions ─────────────────────────────────────────────────────
 
-MEMORYPACK_UNMANAGED(interop::Vec3, 12)
-MEMORYPACK_UNMANAGED(interop::PaddedStruct, 8)
-MEMORYPACK_UNMANAGED(interop::PackedStruct, 5)
-MEMORYPACK_UNMANAGED(interop::ValueTuple2i, 8)
-MEMORYPACK_UNMANAGED(interop::ValueTupleIFD, 16)
+MEMORYPACK_UNMANAGED_EXACT(interop::Vec3, 12, x, y, z)
+MEMORYPACK_UNMANAGED_SCRUBBED(interop::PaddedStruct, 8, tag, value)
+MEMORYPACK_UNMANAGED_EXACT(interop::PackedStruct, 5, tag, value)
+MEMORYPACK_UNMANAGED_EXACT(interop::ValueTuple2i, 8, item1, item2)
+MEMORYPACK_UNMANAGED_EXACT(interop::ValueTupleIFD, 16, item3, item1, item2)
 
 MEMORYPACK_UNION_TAG(interop::CircleShape, 0)
 MEMORYPACK_UNION_TAG(interop::RectShape, 1)

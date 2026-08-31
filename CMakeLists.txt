@@ -19,6 +19,9 @@ option(MEMORYPACK_BUILD_BENCHMARKS "Build benchmarks"             OFF)
 option(MEMORYPACK_BUILD_EXAMPLES   "Build example programs"        OFF)
 option(MEMORYPACK_INSTALL       "Generate install/package rules"  ${MEMORYPACK_IS_TOP_LEVEL})
 
+set(MEMORYPACK_SANITIZE "" CACHE STRING
+    "Sanitizers for the test targets: address, undefined, address+undefined (MSVC: address only)")
+
 # ── Header-only INTERFACE library ───────────────────────────────────────────────
 add_library(memorypack INTERFACE)
 add_library(memorypack::memorypack ALIAS memorypack)

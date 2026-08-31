@@ -27,6 +27,17 @@
 #include <variant>
 #include <vector>
 
+// C4702 "unreachable code": many CHECK_FAILS bodies call something that always
+// throws with exceptions enabled (e.g. Fail()) and then `return` whether it
+// failed - the return is live only in the MEMORYPACK_NO_EXCEPTIONS build. This
+// is an optimizer/codegen diagnostic, not a parser one, so MSVC's docs note
+// that a #pragma warning(disable) scoped tightly around the offending code does
+// not reliably suppress it (it can attribute the warning to whatever line
+// survives after inlining) - it must cover the whole translation unit instead.
+#if defined(_MSC_VER)
+#  pragma warning(disable : 4702)
+#endif
+
 using namespace memorypack;
 
 // ── Test fixtures ────────────────────────────────────────────────────────────────
@@ -76,17 +87,33 @@ struct PlainVec3 {
     float x = 0.f, y = 0.f, z = 0.f;
     friend bool operator==(const PlainVec3&, const PlainVec3&) = default;
 };
-MEMORYPACK_UNMANAGED(PlainVec3, 12)
+MEMORYPACK_UNMANAGED_EXACT(PlainVec3, 12, x, y, z)   // all float: provably no padding
 
 // C# `struct { byte Tag; int Value; }` - natural alignment leaves 3 bytes of
 // padding after the first member, and MemoryPack copies them to the wire.
+// Registered with the original, unchecked macro on purpose: this type is the
+// test material for demonstrating that the padding leak in
+// docs/security.md#unmanaged-struct-padding is real, not hypothetical.
 struct PaddedPair {
     uint8_t tag;
     int32_t value;
     friend bool operator==(const PaddedPair&, const PaddedPair&) = default;
 };
+MEMORYPACK_UNMANAGED(PaddedPair, 8)
 
-// The same fields under [StructLayout(Pack = 1)]: no padding.
+// The same shape, registered with MEMORYPACK_UNMANAGED_SCRUBBED instead: its
+// serialization always goes through a value-initialized temporary, so the
+// padding leak above cannot happen regardless of how the caller's instance was
+// constructed.
+struct ScrubbedPair {
+    uint8_t tag;
+    int32_t value;
+    friend bool operator==(const ScrubbedPair&, const ScrubbedPair&) = default;
+};
+MEMORYPACK_UNMANAGED_SCRUBBED(ScrubbedPair, 8, tag, value)
+
+// The same fields under [StructLayout(Pack = 1)]: no padding, so
+// MEMORYPACK_UNMANAGED_EXACT's compile-time proof passes.
 #pragma pack(push, 1)
 struct PackedPair {
     uint8_t tag;
@@ -94,8 +121,7 @@ struct PackedPair {
     friend bool operator==(const PackedPair&, const PackedPair&) = default;
 };
 #pragma pack(pop)
-MEMORYPACK_UNMANAGED(PaddedPair, 8)
-MEMORYPACK_UNMANAGED(PackedPair, 5)
+MEMORYPACK_UNMANAGED_EXACT(PackedPair, 5, tag, value)
 
 struct AltA { int32_t a = 0; };
 struct AltB { std::string b; };
@@ -432,6 +458,24 @@ static void test_collections() {
         auto buf = w.TakeBuffer();
         MemoryPackReader r(buf.data(), buf.size());
         CHECK(r.ReadVector<int32_t>() == v); }
+    {   // Regression (found by libFuzzer + UBSan, tests/fuzz/corpus/crash_*):
+        // a 1-byte field ahead of an int32 vector pushes its payload to an
+        // offset that is not a multiple of alignof(int32_t). ReadVector<T>'s
+        // bulk path used to reinterpret_cast that offset straight to `const
+        // T*` and dereference it via assign() - a misaligned access (UB, and
+        // a real fault on strict-alignment targets), not just a fuzzer
+        // artifact: this exact byte layout is what any normal writer
+        // produces for `int8, then vector<int32>`.
+        MemoryPackWriter w;
+        w.WriteInt8(1);
+        w.WriteVector(std::vector<int32_t>{10, 20, 30});
+        auto buf = w.TakeBuffer();
+        MemoryPackReader r{std::span<const uint8_t>(buf)};
+        CHECK(r.ReadInt8() == 1);
+        std::vector<int32_t> misaligned;
+        r.ReadVector(misaligned);
+        CHECK((misaligned == std::vector<int32_t>{10, 20, 30}));
+        CHECK(!r.Failed()); }
     {   std::vector<uint8_t> v{0, 1, 2, 255, 128};
         MemoryPackWriter w; w.WriteVector(v);
         auto buf = w.TakeBuffer();
@@ -709,6 +753,19 @@ static void test_unmanaged() {
     CHECK(!Deserialize<std::optional<PlainVec3>>(noneBytes).has_value());
 }
 
+// Fills two instances of T from opposite memory patterns via `fill`, then
+// reports whether they serialize to the same bytes. Filling from 0x00 and 0xFF
+// first (rather than leaving padding merely default-initialized) makes this a
+// deterministic measurement rather than a "did the optimizer happen to zero
+// it" gamble: any difference in the output can only come from padding bytes
+// that `fill` did not touch.
+template<typename T, typename Fill>
+static bool SerializesDeterministically(Fill fill) {
+    T a; std::memset(&a, 0x00, sizeof(a)); fill(a);
+    T b; std::memset(&b, 0xFF, sizeof(b)); fill(b);
+    return Serialize(a) == Serialize(b);
+}
+
 // The unmanaged fast path copies padding to the wire. Value-initialization is
 // what makes that padding - and therefore the output - deterministic.
 // See docs/security.md#unmanaged-struct-padding.
@@ -750,6 +807,26 @@ static void test_unmanaged_padding() {
 
     CHECK(Deserialize<PaddedPair>(first) == PaddedPair{3, 0x11223344});
     CHECK(Deserialize<PackedPair>(packed) == PackedPair{3, 0x11223344});
+
+    // Direct measurement, independent of the value-init discipline above: the
+    // same logical value (tag=3, value=0x11223344), started from two different
+    // memory patterns.
+    auto fillPair = [](auto& p) { p.tag = 3; p.value = 0x11223344; };
+
+    // MEMORYPACK_UNMANAGED offers no protection: the leftover padding pattern
+    // reaches the wire, so the two instances serialize differently. This CHECK
+    // is what turns docs/security.md's warning from a claim into a fact this
+    // suite verifies on every run.
+    CHECK(!SerializesDeterministically<PaddedPair>(fillPair));
+
+    // MEMORYPACK_UNMANAGED_SCRUBBED fixes it: serialization always goes through
+    // a value-initialized temporary, so padding is zero on the wire regardless
+    // of the source instance's memory pattern.
+    CHECK(SerializesDeterministically<ScrubbedPair>(fillPair));
+
+    // MEMORYPACK_UNMANAGED_EXACT on a Pack=1 layout: there is no padding to
+    // begin with, so this is deterministic even through the unchecked copy.
+    CHECK(SerializesDeterministically<PackedPair>(fillPair));
 }
 
 static void test_unions() {
@@ -1079,8 +1156,17 @@ static void test_deserialize_exact() {
     auto lenient = Deserialize<MacroPacket>(bytes);
     CHECK(lenient.id == 1);
 
-    // ...but DeserializeExact reports the leftover input.
-    CHECK_THROWS(DeserializeExact<MacroPacket>(std::span<const uint8_t>(bytes)));
+    // ...but DeserializeExact reports the leftover input, whether that means
+    // throwing (exceptions enabled) or leaving the reader in a failed state
+    // (MEMORYPACK_NO_EXCEPTIONS) - CHECK_FAILS accepts either, so this check
+    // counts the same way in both the exception and no-exceptions test binaries.
+    CHECK_FAILS("DeserializeExact reports trailing bytes", {
+        MemoryPackReader r{std::span<const uint8_t>(bytes)};
+        MacroPacket v{};
+        r.Read(v);
+        r.RequireEnd();
+        return r.Failed();
+    });
 }
 
 static void test_reader_navigation() {

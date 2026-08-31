@@ -116,7 +116,12 @@ python tools/amalgamate.py --include-packet -o dist/memorypack.hpp
    C#이 UTF-16을 쓰더라도 C++이 맞출 필요는 없다
 4. **Unmanaged Struct**: C#에서 참조 타입이 없는 struct는 Object Header 없이 메모리 그대로 복사.
    **자연 정렬(패딩 포함) 표준 레이아웃**으로 매핑한다. `Pack=1`이 C#에 명시된 경우에만 `#pragma pack(1)`.
-   `MEMORYPACK_UNMANAGED(T, size)`의 크기 단언이 레이아웃 어긋남을 컴파일 타임에 잡는다
+   `MEMORYPACK_UNMANAGED(T, size)`의 크기 단언이 레이아웃 어긋남을 컴파일 타임에 잡는다.
+   패딩이 있는 타입은 값 초기화(`T v{};`)를 caller가 지키지 않으면 패딩 바이트가 그대로
+   와이어에 실린다(`docs/security.md#unmanaged-struct-padding`) — 멤버 이름을 나열할 수 있으면
+   `MEMORYPACK_UNMANAGED_EXACT`(패딩 없음을 컴파일 타임에 증명, Pack=1이나 all-float 등)
+   또는 `MEMORYPACK_UNMANAGED_SCRUBBED`(패딩이 항상 0으로 직렬화됨을 런타임에 보장)를
+   우선 사용한다. `cs2cpp`는 생성 코드에서 이 규칙을 자동 적용한다(Pack=1 → EXACT, 그 외 → SCRUBBED)
 5. **Version Tolerance**: 멤버는 **뒤에만 추가** 가능. 순서 변경/삭제는 호환 파괴.
    삭제가 필요하면 VersionTolerant 레이아웃 사용
 6. **null 인코딩 4종**: `MyClass?`=`FF`, `string?`/`List<T>?`=`FFFFFFFF`,
@@ -154,7 +159,8 @@ struct IMemoryPackable<MyPacket> {
 }
 ```
 
-기타: `MEMORYPACK_UNMANAGED(T, size)`, `MEMORYPACK_UNION_TAG(T, tag)`,
+기타: `MEMORYPACK_UNMANAGED(T, size)` / `MEMORYPACK_UNMANAGED_EXACT(T, size, m1, ...)` /
+`MEMORYPACK_UNMANAGED_SCRUBBED(T, size, m1, ...)`, `MEMORYPACK_UNION_TAG(T, tag)`,
 `MEMORYPACK_DEFINE_EMPTY(T)`
 
 ## 테스트 정책

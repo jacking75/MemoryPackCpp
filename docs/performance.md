@@ -91,7 +91,11 @@ memorypack::Deserialize(ptr, size, existingObject);
 ```
 
 Reading an arithmetic vector is a single bounds-checked `memcpy` into an
-`assign()` — no zero-fill pass, no per-element loop.
+`assign()` — no zero-fill pass, no per-element loop — whenever the element data
+happens to fall on an `alignof(T)`-aligned offset in the input, which depends
+on the sizes of whatever fields precede it. When it does not, the reader falls
+back to a `resize()` + `memcpy()` (one zero-fill pass) rather than dereference
+a misaligned pointer.
 
 ---
 

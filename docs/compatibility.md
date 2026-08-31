@@ -106,10 +106,11 @@ individually if you need to support one.
 | Configuration | Supported |
 |---|---|
 | Exceptions enabled (default) | ✅ built and tested |
-| `MEMORYPACK_NO_EXCEPTIONS` / `_HAS_EXCEPTIONS=0` | ✅ built and tested — errors surface through the reader/writer error state and `std::expected` |
+| `MEMORYPACK_NO_EXCEPTIONS` / `_HAS_EXCEPTIONS=0` | ✅ built and tested (ctest: `memorypack_tests_noexcept`, runs on every build — not a one-time manual check) — errors surface through the reader/writer error state and `std::expected` |
 | `-fno-exceptions` (GCC/Clang spelling) | expected to work; the same code path, not yet built |
 | `-fno-rtti` | ✅ by construction — no RTTI is used |
-| AddressSanitizer / UndefinedBehaviorSanitizer | supported; run the fuzz harness in [docs/security.md](security.md#fuzzing) |
+| AddressSanitizer (MSVC) | ✅ built and tested — `-DMEMORYPACK_SANITIZE=address`, no extra install on Windows; `tools/verify.ps1 -Asan` |
+| AddressSanitizer + UndefinedBehaviorSanitizer (Clang/libFuzzer) | ✅ run, not yet CI — see the fuzzing log in [docs/security.md](security.md#fuzzing) |
 | Static analysis (`clang-tidy`, MSVC `/analyze`) | configured via `.clang-tidy` |
 
 ---

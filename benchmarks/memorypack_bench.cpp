@@ -41,7 +41,7 @@
 // =============================================================================
 // Benchmark payload types
 //
-// MEMORYPACK_DEFINE / MEMORYPACK_UNMANAGED open `namespace memorypack`, so they
+// MEMORYPACK_DEFINE / MEMORYPACK_UNMANAGED* open `namespace memorypack`, so they
 // (and therefore the types they refer to) must live at global scope.
 // =============================================================================
 
@@ -79,13 +79,14 @@ struct ItemList {
 MEMORYPACK_DEFINE(ItemList, items)
 
 /// Layout-compatible with a C# unmanaged struct: serialized as a verbatim
-/// memcpy, with no per-element object header.
+/// memcpy, with no per-element object header. All-float, so
+/// MEMORYPACK_UNMANAGED_EXACT's no-padding proof is free here.
 struct Vec3 {
     float x;
     float y;
     float z;
 };
-MEMORYPACK_UNMANAGED(Vec3, 12)
+MEMORYPACK_UNMANAGED_EXACT(Vec3, 12, x, y, z)
 
 /// Byte-for-byte the same C++ layout as Vec3, but registered through the
 /// generic object path instead. Existing only so section 7 can measure what the
@@ -96,6 +97,18 @@ struct Vec3Generic {
     float z;
 };
 MEMORYPACK_DEFINE(Vec3Generic, x, y, z)
+
+/// Byte-for-byte the same layout as Vec3, but registered through
+/// MEMORYPACK_UNMANAGED_SCRUBBED instead. Exists so section 7b can measure the
+/// cost of the copy-through-a-value-initialized-temporary mechanism in
+/// isolation - Vec3 has no actual padding to zero, so any difference against
+/// Vec3 is purely the per-member-copy overhead, not padding-clearing work.
+struct Vec3Scrubbed {
+    float x;
+    float y;
+    float z;
+};
+MEMORYPACK_UNMANAGED_SCRUBBED(Vec3Scrubbed, 12, x, y, z)
 
 namespace {
 
@@ -562,6 +575,55 @@ void BM_Deserialize_GenericCollection(benchmark::State& state) {
     SetThroughput(state, bytes.size());
 }
 BENCHMARK(BM_Deserialize_GenericCollection);
+
+// =============================================================================
+// 7b. MEMORYPACK_UNMANAGED_EXACT vs MEMORYPACK_UNMANAGED_SCRUBBED
+//
+// Question: what does _SCRUBBED's padding safety (a value-initialized
+// temporary plus a per-member copy in Serialize) cost compared to the plain
+// unmanaged memcpy? Both benchmarks go through the same generic per-element
+// vector path (Write(item) per element - Vec3 and Vec3Scrubbed are both
+// unmanaged, so neither gets a per-element object header), so the only
+// difference measured is what each type's Serialize() does.
+// =============================================================================
+
+void BM_Serialize_UnmanagedExact_PerElement(benchmark::State& state) {
+    const std::vector<Vec3> values = MakeVec3s<Vec3>(kVec3Count);
+    const size_t payloadSize = memorypack::Serialize(values).size();
+
+    memorypack::MemoryPackWriter writer;
+    writer.Reserve(payloadSize);
+
+    for (auto _ : state) {
+        writer.Clear();
+        writer.Write(values);   // per-element: MemoryPackFormatter<Vec3>::Serialize
+        const size_t written = writer.Size();
+        benchmark::DoNotOptimize(written);
+        benchmark::ClobberMemory();
+    }
+
+    SetThroughput(state, payloadSize);
+}
+BENCHMARK(BM_Serialize_UnmanagedExact_PerElement);
+
+void BM_Serialize_UnmanagedScrubbed_PerElement(benchmark::State& state) {
+    const std::vector<Vec3Scrubbed> values = MakeVec3s<Vec3Scrubbed>(kVec3Count);
+    const size_t payloadSize = memorypack::Serialize(values).size();
+
+    memorypack::MemoryPackWriter writer;
+    writer.Reserve(payloadSize);
+
+    for (auto _ : state) {
+        writer.Clear();
+        writer.Write(values);   // per-element: value-init temp + 3 member copies
+        const size_t written = writer.Size();
+        benchmark::DoNotOptimize(written);
+        benchmark::ClobberMemory();
+    }
+
+    SetThroughput(state, payloadSize);
+}
+BENCHMARK(BM_Serialize_UnmanagedScrubbed_PerElement);
 
 // =============================================================================
 // 8. End-to-end packet framing

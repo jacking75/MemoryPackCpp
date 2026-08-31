@@ -11,6 +11,66 @@ such correction is listed here together with the fixture that proves it.
 
 ---
 
+## [Unreleased]
+
+Hardening pass closing the verification gaps identified in the 2026-08-31
+review (see `docs/dev/hardening-plan.md`): fuzzing that had never actually run,
+a no-exceptions build with no regression coverage, unmanaged struct padding
+protected only by documentation, and a nine-command manual verification
+checklist.
+
+### Added
+
+- **Fuzzing is now a standing regression asset, not a one-off.** Three layers:
+  - Layer A: `tests/fuzz/fuzz_replay.cpp` replays the committed corpus
+    (`tests/fuzz/corpus/`, seeded from the real C# fixtures by
+    `tools/seed_fuzz_corpus.py`) as the `memorypack_fuzz_replay` `ctest`
+    target — no sanitizer or clang required, runs on every build.
+  - Layer B: `-DMEMORYPACK_SANITIZE=address` builds the test suite under MSVC
+    AddressSanitizer with no extra install on Windows.
+  - Layer C: an actual libFuzzer session (WSL on Windows), which found and
+    fixed two real bugs on its first run — see "Fixed" and the fuzzing log in
+    `docs/security.md#fuzzing`.
+- **`memorypack_tests_noexcept`**: the unit test suite, built with
+  `MEMORYPACK_NO_EXCEPTIONS`/`_HAS_EXCEPTIONS=0`, now runs in `ctest` and
+  reports the same check count as the exception-enabled build — the
+  no-exceptions path (used by Unreal Engine and console toolchains) can no
+  longer regress silently.
+- **`MEMORYPACK_UNMANAGED_EXACT(Type, size, m1, ...)`** and
+  **`MEMORYPACK_UNMANAGED_SCRUBBED(Type, size, m1, ...)`**: the unmanaged
+  struct padding leak documented in `docs/security.md#unmanaged-struct-padding`
+  is now either proven impossible at compile time (`_EXACT`, for a struct with
+  no padding) or always zeroed at runtime (`_SCRUBBED`), instead of depending
+  on the caller value-initializing every instance. `tools/cs2cpp` generates
+  one or the other automatically for every unmanaged struct, so generated code
+  is structurally immune to the leak.
+- **`tools/verify.ps1`**: runs the full local verification checklist — build,
+  `ctest`, `FormatProbe verify`/`check-cpp`, `cs2cpp.Tests`, `cs2cpp --check`,
+  and the sample E2E pairs — as one command with one exit code, finding the
+  Visual Studio developer environment itself. `-Quick` skips the
+  .NET-dependent and E2E steps; `-Asan` adds the MSVC ASan build. An opt-in
+  `.githooks/pre-push` runs `-Quick` before every push.
+
+### Fixed
+
+- **`MemoryPackReader::ReadVector<T>`** could dereference a misaligned
+  pointer when bulk-reading an arithmetic vector: the read position is the sum
+  of every preceding field's size and is not generally a multiple of
+  `alignof(T)` (found by fuzzing within the first few thousand executions —
+  this is reachable from real packet layouts, e.g. a one-byte field followed
+  by an `int32` vector, not just a fuzzer-constructed input). Now falls back
+  to `memcpy` when the source is misaligned.
+- The wire format did not change — all 53 fixtures in `tests/fixtures/` and
+  all 22 `FormatProbe check-cpp` cases remain byte-identical.
+
+### Changed
+
+- `docs/security.md`, `docs/compatibility.md`, `docs/api-reference.md`,
+  `docs/benchmarks.md`, `docs/performance.md`, `CLAUDE.md`: updated for the
+  above.
+
+---
+
 ## [0.2.0] - 2026-08-30
 
 The release that turns a working prototype into something you can put in front of

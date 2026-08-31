@@ -41,9 +41,9 @@ struct UnmanagedHolder {
 };
 
 // ── Serializer definitions ─────────────────────────────────────────────────────
-MEMORYPACK_UNMANAGED(Vec3, 12)
-MEMORYPACK_UNMANAGED(PaddedStruct, 8)
-MEMORYPACK_UNMANAGED(PackedStruct, 5)
+MEMORYPACK_UNMANAGED_SCRUBBED(Vec3, 12, x, y, z)
+MEMORYPACK_UNMANAGED_SCRUBBED(PaddedStruct, 8, tag, value)
+MEMORYPACK_UNMANAGED_EXACT(PackedStruct, 5, tag, value)
 
 MEMORYPACK_DEFINE(ManagedStruct, id, label)
 MEMORYPACK_DEFINE(UnmanagedHolder, position, padded, packed, maybeVec, points, managed)

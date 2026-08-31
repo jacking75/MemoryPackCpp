@@ -37,6 +37,30 @@
 // producing packets that decode into garbage at 3 a.m. Always pass the size
 // that the C# side actually has (Marshal.SizeOf / Unsafe.SizeOf<T>()), never
 // just whatever sizeof() happens to return locally.
+//
+// ---------------------------------------------------------------------------
+// THREE MACROS, ONE QUESTION: DOES THIS TYPE HAVE PADDING?
+// ---------------------------------------------------------------------------
+// Plain MEMORYPACK_UNMANAGED (above) trusts the caller to value-initialize
+// every instance so padding never leaks onto the wire - a documentation-only
+// guarantee, demonstrated (and broken) with PaddedStat below. Two stricter
+// variants turn that trust requirement into either a compile-time proof or a
+// runtime guarantee, given the struct's member names:
+//
+//   MEMORYPACK_UNMANAGED_EXACT(Type, size, members...)
+//     Compile error if Type has ANY padding (sum of member sizes != sizeof).
+//     Use for a naturally packed type (all-float, like Vec3 below) or one
+//     under [StructLayout(Pack = 1)]. Zero runtime cost - identical generated
+//     code to MEMORYPACK_UNMANAGED, just a stronger compile-time check.
+//
+//   MEMORYPACK_UNMANAGED_SCRUBBED(Type, size, members...)
+//     For a type that DOES have padding: every Serialize() copies the members
+//     into a value-initialized temporary first, so the padding on the wire is
+//     always zero, no matter how the caller's instance was constructed. Costs
+//     one stack temporary and a per-member copy - see PaddedStatScrubbed below.
+//
+// This file uses EXACT for Vec3 and SCRUBBED for PaddedStat's safe twin,
+// PaddedStatScrubbed. See docs/security.md#unmanaged-struct-padding.
 // ============================================================================
 
 #include "memorypack/memorypack.hpp"
@@ -50,22 +74,39 @@
 #include <vector>
 
 // -- 1. The classic: three floats, 12 bytes, no padding needed. --------------
+//    MEMORYPACK_UNMANAGED_EXACT compiles this into exactly the same code as
+//    MEMORYPACK_UNMANAGED, but additionally proves at compile time that the
+//    three floats add up to sizeof(Vec3) - there is no padding to worry about.
 struct Vec3 {
     float x = 0.0f;
     float y = 0.0f;
     float z = 0.0f;
     friend bool operator==(const Vec3&, const Vec3&) = default;
 };
-MEMORYPACK_UNMANAGED(Vec3, 12)
+MEMORYPACK_UNMANAGED_EXACT(Vec3, 12, x, y, z)
 
 // -- 2. The one that bites: a byte followed by an int. -----------------------
 //    C#: struct PaddedStat { byte Tier; int Score; }  ->  8 bytes on the wire.
+//    Registered with the plain, unchecked macro on purpose, so the padding
+//    leak below is real rather than hypothetical - PaddedStatScrubbed further
+//    down is the same shape with the leak fixed structurally.
 struct PaddedStat {
     uint8_t tier  = 0;
     int32_t score = 0;
     friend bool operator==(const PaddedStat&, const PaddedStat&) = default;
 };
 MEMORYPACK_UNMANAGED(PaddedStat, 8)   // 8, not 5 - the padding is part of the wire format
+
+// -- 2b. The same shape, fixed structurally with MEMORYPACK_UNMANAGED_SCRUBBED.
+//    Serialize() always copies tier/score into a value-initialized temporary
+//    before writing it, so the temporary's padding - not the caller's - is
+//    what reaches the wire, and that padding is always zero.
+struct PaddedStatScrubbed {
+    uint8_t tier  = 0;
+    int32_t score = 0;
+    friend bool operator==(const PaddedStatScrubbed&, const PaddedStatScrubbed&) = default;
+};
+MEMORYPACK_UNMANAGED_SCRUBBED(PaddedStatScrubbed, 8, tier, score)
 
 // -- 3. For contrast: the same shape as a MANAGED type. ----------------------
 //    A C# class, or a struct containing a string, is NOT unmanaged, so it gets
@@ -196,6 +237,31 @@ int main() {
           statBytes[1] == 0 && statBytes[2] == 0 && statBytes[3] == 0);
 
     // -----------------------------------------------------------------------
+    // MEMORYPACK_UNMANAGED_SCRUBBED: the same padding problem, fixed
+    // structurally instead of by caller discipline. `dirtyScrubbed` below is
+    // filled from the same 0xCD noise as `noisy` above, but Serialize() copies
+    // its members into a fresh, value-initialized temporary before writing -
+    // so the dirty padding never reaches the wire.
+    // -----------------------------------------------------------------------
+    std::printf("--- MEMORYPACK_UNMANAGED_SCRUBBED fixes it structurally ---\n\n");
+    PaddedStatScrubbed dirtyScrubbed;
+    std::memset(static_cast<void*>(&dirtyScrubbed), 0xCD, sizeof(dirtyScrubbed));
+    dirtyScrubbed.tier  = 3;
+    dirtyScrubbed.score = 0x11223344;
+
+    const std::vector<uint8_t> scrubbedBytes = memorypack::Serialize(dirtyScrubbed);
+    Dump("PaddedStatScrubbed{tier=3, score=0x11223344}, padding left dirty", scrubbedBytes);
+    std::printf("    -> padding is zero anyway: Serialize() never touches the caller's\n");
+    std::printf("       padding at all, only the value-initialized temporary's.\n\n");
+
+    Check("SCRUBBED zeroes padding even from a dirty source object",
+          scrubbedBytes[1] == 0 && scrubbedBytes[2] == 0 && scrubbedBytes[3] == 0);
+    Check("SCRUBBED bytes match the cleanly-zeroed PaddedStat bytes",
+          scrubbedBytes == statBytes);
+    Check("SCRUBBED round trip",
+          memorypack::Deserialize<PaddedStatScrubbed>(scrubbedBytes) == dirtyScrubbed);
+
+    // -----------------------------------------------------------------------
     // Bulk arrays: WriteUnmanagedCollection / ReadUnmanagedCollection.
     //
     // C#: List<Vec3> / Vec3[] of an unmanaged element type is written as
@@ -208,6 +274,13 @@ int main() {
     // formatter per element), but going through the explicit
     // Write/ReadUnmanagedCollection pair documents the intent and guarantees
     // the single-memcpy path.
+    //
+    // CAVEAT: that single memcpy is also why WriteUnmanagedCollection is not
+    // safe to call directly on a MEMORYPACK_UNMANAGED_SCRUBBED type such as
+    // PaddedStatScrubbed - it copies the span's raw bytes and never goes
+    // through the type's Serialize(), so scrubbing would not happen. Use the
+    // generic Write(vector<T>) path for a SCRUBBED element type instead; it
+    // calls Serialize() per element like any other formatter.
     // -----------------------------------------------------------------------
     std::printf("--- bulk arrays (single memcpy) ---\n\n");
     const std::vector<Vec3> cloud{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};

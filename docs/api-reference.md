@@ -191,7 +191,9 @@ MemoryPackReader r(std::span<const uint8_t>, const ReaderOptions&);
 |---|---|
 | `MEMORYPACK_DEFINE(Type, m1, m2, ...)` | Generates the serializer from a member list (global scope, up to 32 members) |
 | `MEMORYPACK_DEFINE_EMPTY(Type)` | For a type with no serialized members |
-| `MEMORYPACK_UNMANAGED(Type, ExpectedSize)` | Maps a C# unmanaged struct; asserts `sizeof` |
+| `MEMORYPACK_UNMANAGED(Type, ExpectedSize)` | Maps a C# unmanaged struct; asserts `sizeof`. Unchecked with respect to padding - see [docs/security.md#unmanaged-struct-padding](security.md#unmanaged-struct-padding) |
+| `MEMORYPACK_UNMANAGED_EXACT(Type, ExpectedSize, m1, m2, ...)` | Like `MEMORYPACK_UNMANAGED`, plus a compile-time proof that `Type` has no padding (member sizes sum to `sizeof(Type)`). Zero runtime cost; use for `[StructLayout(Pack = 1)]` structs or any naturally packed type |
+| `MEMORYPACK_UNMANAGED_SCRUBBED(Type, ExpectedSize, m1, m2, ...)` | Like `MEMORYPACK_UNMANAGED`, for a type that DOES have padding: `Serialize` builds the wire bytes in a zero-filled buffer at each member's real offset, so padding is always zero regardless of the source object. Costs a small stack buffer and a per-member `memcpy` |
 | `MEMORYPACK_UNION_TAG(Type, Tag)` | Declares a `std::variant` alternative's union tag |
 | `MEMORYPACK_NO_EXCEPTIONS` | Define before including to force the exception-free path |
 | `MEMORYPACK_HAS_EXCEPTIONS` | 1 when exceptions are in use |

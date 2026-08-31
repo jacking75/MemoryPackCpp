@@ -139,6 +139,53 @@ to miss in testing.
 The C# side is not affected in the other direction: the CLR zeroes managed
 memory, so structs arriving from C# have zeroed padding.
 
+### Making it structural instead of a discipline
+
+The rules above rely on every caller remembering to value-initialize. Two
+macros turn that reliance into either a compile-time proof or a runtime
+guarantee, given the struct's member names in declaration order:
+
+```cpp
+// Provably no padding (all-float, or [StructLayout(Pack = 1)] on the C# side):
+// a compile error if the member sizes do not sum to sizeof(Type). Identical
+// generated code to MEMORYPACK_UNMANAGED otherwise - zero runtime cost.
+MEMORYPACK_UNMANAGED_EXACT(Vec3, 12, x, y, z)
+
+// Has padding: Serialize() always builds the wire bytes in a zero-filled
+// buffer at each member's real offset, so the padding on the wire is always
+// zero no matter how the caller's instance was constructed.
+MEMORYPACK_UNMANAGED_SCRUBBED(PaddedStat, 8, tier, score)
+```
+
+`tools/cs2cpp` (the C# → C++ generator) uses this rule automatically: a
+`[StructLayout(Pack = 1)]` struct is generated as `_EXACT`; any other unmanaged
+struct is generated as `_SCRUBBED`, whether or not it actually has padding.
+Generated code is therefore structurally immune to this leak - only a
+hand-written `MEMORYPACK_UNMANAGED` declaration still depends on the caller's
+discipline.
+
+**Implementation note, if you are writing a `_SCRUBBED`-equivalent by hand:**
+the obvious implementation - value-initialize a temporary of the struct type,
+assign the members into it from the source, then serialize the temporary - is
+not reliable. Measured on MSVC, assigning every declared member from the
+source object gives the compiler license to notice that the result has the
+same member *values* as a whole-object copy from the source would (padding is
+unspecified either way, so the compiler considers both "equally correct") and
+fold the sequence into a single copy from the source - silently reintroducing
+the source's padding and defeating the whole mechanism.
+`MEMORYPACK_UNMANAGED_SCRUBBED` instead builds the wire bytes in a plain
+`uint8_t` buffer that is never itself an instance of the struct type, using
+`offsetof` per member, so there is no second same-typed object for the
+compiler to relate the source to.
+
+**Caveat:** `WriteUnmanagedCollection` / `ReadUnmanagedCollection` are a
+separate, explicit bulk API that bulk-`memcpy`s a `std::span<const T>` directly
+- they do not go through `T`'s registered `MemoryPackFormatter`, so calling
+them directly on a `_SCRUBBED` type bypasses the scrubbing. The generic
+`Write(std::vector<T>)` / collection path does go through the formatter per
+element and is safe for `_SCRUBBED` types; prefer it for a padded unmanaged
+type shipped in bulk.
+
 ---
 
 ## Configuring limits for your protocol
@@ -174,21 +221,106 @@ A practical server pattern:
 
 [`tests/fuzz/fuzz_deserialize.cpp`](../tests/fuzz/fuzz_deserialize.cpp) drives
 the whole decoder — objects, nested collections, maps, sets, unions, optionals,
-the raw reader API, and the frame parser — with libFuzzer under
-AddressSanitizer and UndefinedBehaviorSanitizer.
+the raw reader API, and the frame parser — with a one-byte selector choosing
+which decoder path each input exercises. There are three layers, so that
+fuzzing is a standing regression asset instead of something that only ran once,
+by hand, before nobody remembered to run it again.
+
+### Layer A — corpus replay, in `ctest`, on every compiler
+
+`tests/fuzz/fuzz_replay.cpp` links the harness without libFuzzer and replays
+every file in [`tests/fuzz/corpus/`](../tests/fuzz/corpus) through it. It needs
+no sanitizer and no clang — it runs as the `memorypack_fuzz_replay` `ctest`
+target on any compiler this library supports, so a crash found once by layer C
+stays fixed forever, checked on every build.
+
+The corpus is seeded from the real C# MemoryPack fixtures in
+`tests/fixtures/` (`python tools/seed_fuzz_corpus.py`, idempotent) plus every
+`crash_<date>_<description>.bin` committed after a real finding — see below.
+
+### Layer B — MSVC AddressSanitizer
+
+Windows ships AddressSanitizer with MSVC (Visual Studio 2019 16.9+); no
+separate install is needed:
+
+```powershell
+cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo `
+      -DMEMORYPACK_BUILD_TESTS=ON -DMEMORYPACK_SANITIZE=address
+cmake --build build-asan
+ctest --test-dir build-asan --output-on-failure
+```
+
+`tools/verify.ps1 -Asan` does this for you. Two things this does **not** give
+you: UndefinedBehaviorSanitizer (MSVC does not ship one - that's layer C's job)
+and new inputs (this replays the same `ctest` suite under instrumentation, it
+does not explore).
+
+### Layer C — real fuzzing with libFuzzer (WSL on Windows)
+
+This is the layer that explores new inputs, under ASan **and** UBSan. MSVC has
+no libFuzzer, so on Windows this runs in WSL - that makes WSL a **fuzzing
+host**, not a claim that Linux is a supported platform (see
+[compatibility.md](compatibility.md)):
 
 ```bash
+wsl -d Ubuntu
+sudo apt install -y clang lld            # once
+cd /mnt/f/github/MemoryPackCpp
+
 clang++ -std=c++23 -g -O1 -Iinclude \
     -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all \
     tests/fuzz/fuzz_deserialize.cpp -o fuzz_deserialize
-./fuzz_deserialize -max_total_time=600
+./fuzz_deserialize tests/fuzz/corpus -max_total_time=1800 -rss_limit_mb=2048
 ```
 
-There is no hosted CI in this repository, so run it yourself when you touch the
-reader — a ten-minute session is enough to shake out an obvious regression. A
-crash, a sanitizer report, or an unbounded allocation is a bug.
+A crash, a sanitizer report, or an unbounded allocation is a bug. When you find
+one:
 
-If you find a crashing input, please attach the reproducer file to your report.
+1. `-minimize_crash=1 <artifact>` to shrink it to a minimal reproducer.
+2. Commit the minimized file as `tests/fuzz/corpus/crash_<yyyymmdd>_<short-description>.bin`.
+   Layer A now fails on it — that is the regression test.
+3. Fix the bug, confirm the fixture suite (`tests/fixtures/`) still passes
+   byte-for-byte — a fuzzing fix must never change the wire format — and that
+   `ctest` (including the replay) passes.
+
+If you find a crashing input in a released version and are not comfortable
+fixing it yourself, please attach the reproducer file to your report instead.
+
+### Fuzzing log
+
+| Date | Host | Build | Execs | Corpus | Crashes found | Notes |
+|---|---|---|---|---|---|---|
+| 2026-08-31 | WSL Ubuntu 22.04, clang 18.1.8 (`--gcc-install-dir` pinned to a GCC 13 toolchain; the box's default `g++` is an experimental GCC 16 trunk snapshot incompatible with this clang) | fuzzer+asan+ubsan | 2 fixed within the first ~5K execs, then a dedicated 1803s/5,949,059-exec session found 0 more | 74 curated (seeds + the 2 crash reproducers; libFuzzer's own exploration corpus from the session was not committed - see below) | 2 (fixed, see below) | First real run |
+
+Both crashes from the 2026-08-31 session were found in the first few thousand
+executions, i.e. they were reachable from day one, not deep fuzzer discoveries
+— which is exactly the point of finally running this:
+
+- **Misaligned bulk read** (`crash_20260831_misaligned_int_vector.bin`):
+  `MemoryPackReader::ReadVector<T>`'s fast path reinterpreted the input buffer
+  at the current read position directly as `const T*` and bulk-copied through
+  it. That position is the sum of every preceding field's size and is not
+  generally a multiple of `alignof(T)` — a real packet layout (e.g. one byte
+  field followed by an `int32` vector) can and does misalign it, not just a
+  fuzzer-constructed input. Fixed by checking alignment first and falling back
+  to `memcpy` when misaligned; see the fix in `include/memorypack/core.hpp`
+  and the regression test in `tests/memorypack_tests.cpp` ("collections").
+- **Uncaught exception in the fuzz harness itself**
+  (`crash_20260831_frame_deserialize_throw.bin`): `TryFraming`'s frame
+  callback called the throwing `Deserialize` without a `try`/`catch`, unlike
+  every other `Try*` helper in the harness. This was a bug in the harness, not
+  the library — exactly the mistake the hardening checklist below warns a real
+  server against. Fixed in `tests/fuzz/fuzz_deserialize.cpp`.
+
+After both fixes, a dedicated 30-minute session (1803s, 5,949,059 executions)
+found nothing further. libFuzzer treats the corpus directory it is pointed at
+as read **and** write, so that session grew `tests/fuzz/corpus/` to over 1500
+files; only the 72 seeded files and the 2 crash reproducers above were kept
+for layer A — the rest were the session's own exploration state, not
+committed on purpose (about a hundred times the repository's actual fixture
+count, for no additional regression value once the crashes they led to are
+captured). Re-run layer C locally if you want to grow a local exploration
+corpus of your own.
 
 ---
 

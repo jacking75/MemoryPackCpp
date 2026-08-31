@@ -271,8 +271,28 @@ public sealed class CppGenerator
 
         if (unmanaged.Count > 0)
         {
+            // Pack=1 has no padding by construction, so EXACT's compile-time
+            // proof always holds - use it for the zero-cost guarantee. Anything
+            // else MIGHT have padding between members (natural alignment), so
+            // generated code always reaches for SCRUBBED rather than trying to
+            // compute whether padding actually exists: a small, structural
+            // safety margin is worth more here than shaving a memcpy off types
+            // that happen to pack tightly without a Pack=1 attribute.
             foreach (var t in unmanaged)
-                Line($"MEMORYPACK_UNMANAGED({Qualified(t.Name)}, {t.UnmanagedSize})");
+            {
+                // An empty struct (C# size 1, no fields) has no padding question
+                // to begin with, and the member-listing macros require at least
+                // one member - fall back to the plain, unchecked macro rather
+                // than emit a malformed empty argument list.
+                if (t.Members.Count == 0)
+                {
+                    Line($"MEMORYPACK_UNMANAGED({Qualified(t.Name)}, {t.UnmanagedSize})");
+                    continue;
+                }
+                var members = string.Join(", ", t.Members.Select(m => m.CppName));
+                var macro = t.Pack1 ? "MEMORYPACK_UNMANAGED_EXACT" : "MEMORYPACK_UNMANAGED_SCRUBBED";
+                Line($"{macro}({Qualified(t.Name)}, {t.UnmanagedSize}, {members})");
+            }
             Line();
         }
 

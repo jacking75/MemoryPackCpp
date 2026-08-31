@@ -363,7 +363,7 @@ struct Quaternion { float x = 0, y = 0, z = 0, w = 0;  friend bool operator==(co
 
 } // namespace memorypack
 
-MEMORYPACK_UNMANAGED(memorypack::Vector2, 8)
-MEMORYPACK_UNMANAGED(memorypack::Vector3, 12)
-MEMORYPACK_UNMANAGED(memorypack::Vector4, 16)
-MEMORYPACK_UNMANAGED(memorypack::Quaternion, 16)
+MEMORYPACK_UNMANAGED_EXACT(memorypack::Vector2, 8, x, y)
+MEMORYPACK_UNMANAGED_EXACT(memorypack::Vector3, 12, x, y, z)
+MEMORYPACK_UNMANAGED_EXACT(memorypack::Vector4, 16, x, y, z, w)
+MEMORYPACK_UNMANAGED_EXACT(memorypack::Quaternion, 16, x, y, z, w)

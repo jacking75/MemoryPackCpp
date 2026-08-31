@@ -83,7 +83,7 @@ MEMORYPACK_DEFINE(fuzztypes::AltA, a)
 MEMORYPACK_DEFINE(fuzztypes::AltB, b)
 MEMORYPACK_UNION_TAG(fuzztypes::AltA, 0)
 MEMORYPACK_UNION_TAG(fuzztypes::AltB, 300)
-MEMORYPACK_UNMANAGED(fuzztypes::Vec3, 12)
+MEMORYPACK_UNMANAGED_EXACT(fuzztypes::Vec3, 12, x, y, z)
 
 // ── Harness ────────────────────────────────────────────────────────────────────
 
@@ -136,6 +136,15 @@ void TryPrimitives(std::span<const uint8_t> data, const memorypack::ReaderOption
 }
 
 /// Feeds the input to the TCP frame reassembler in small chunks.
+///
+/// Found by fuzzing: the callback below must catch what Deserialize() throws
+/// on a malformed body, exactly as every other Try*() helper in this file
+/// does. PacketFrameParser::Feed() has no reason to guard against that itself
+/// - an exception escaping a user callback is normal C++ propagation, not a
+/// library defect - but this harness treats "the process survives" as the
+/// bar for every code path it drives, so it has to do here what
+/// docs/security.md's hardening checklist already tells a real server to do:
+/// never let an exception escape from packet handling into the accept loop.
 void TryFraming(std::span<const uint8_t> data) {
     memorypack::PacketFrameParser parser(64 * 1024);
     size_t offset = 0;
@@ -143,8 +152,17 @@ void TryFraming(std::span<const uint8_t> data) {
         const size_t chunk = std::min<size_t>(7, data.size() - offset);
         const bool ok = parser.Feed(data.subspan(offset, chunk),
                                     [](uint16_t, std::span<const uint8_t> body) {
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
+                                        try {
+                                            auto v = memorypack::Deserialize<fuzztypes::Item>(body);
+                                            (void)v;
+                                        } catch (const memorypack::MemoryPackException&) {
+                                        } catch (const std::bad_alloc&) {
+                                        }
+#else
                                         auto v = memorypack::Deserialize<fuzztypes::Item>(body);
                                         (void)v;
+#endif
                                     });
         if (!ok) break;   // the parser rejected the stream, as designed
         offset += chunk;

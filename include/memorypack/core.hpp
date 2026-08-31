@@ -254,6 +254,13 @@ struct IsUnmanaged : std::false_type {};
 template<typename T>
 inline constexpr bool IsUnmanagedV = IsUnmanaged<T>::value;
 
+namespace detail {
+/// Specialized by MEMORYPACK_UNMANAGED_EXACT to sum a type's member sizes at
+/// compile time; deliberately has no generic definition.
+template<typename T>
+struct UnmanagedProbe;
+} // namespace detail
+
 /// How a null value of T is spelled on the wire. C# uses four different
 /// encodings depending on the kind of type, and std::optional<T> has to follow
 /// the one that matches T.
@@ -1115,8 +1122,24 @@ public:
         auto count = static_cast<size_t>(len);
         if (!EnsureBytes(count * sizeof(T))) return;
         if constexpr (std::endian::native == std::endian::little) {
-            const T* src = reinterpret_cast<const T*>(data_ + pos_);
-            out.assign(src, src + count);       // single pass, no zero-fill
+            const uint8_t* p = data_ + pos_;
+            // `pos_` is the sum of every preceding field's size and is not
+            // generally a multiple of alignof(T) (e.g. a 1-byte field followed
+            // by an int32 vector) - found by fuzzing, which is exactly the kind
+            // of misaligned offset a real packet layout can produce. Casting p
+            // to `const T*` and dereferencing it through assign() would be a
+            // misaligned access (UB, and a real fault on strict-alignment
+            // targets) whenever it lands on a non-aligned offset, so only take
+            // that path when p actually satisfies alignof(T); otherwise fall
+            // back to a memcpy, which places no alignment requirement on
+            // either side.
+            if (reinterpret_cast<uintptr_t>(p) % alignof(T) == 0) {
+                const T* src = reinterpret_cast<const T*>(p);
+                out.assign(src, src + count);   // single pass, no zero-fill
+            } else {
+                out.resize(count);
+                std::memcpy(out.data(), p, count * sizeof(T));
+            }
             pos_ += count * sizeof(T);
         } else {
             out.reserve(count);
@@ -1891,9 +1914,12 @@ template<typename T>
 /// Marks a trivially-copyable C++ struct as the mapping of a C# unmanaged struct.
 /// `ExpectedSize` is checked against sizeof to catch layout drift early.
 ///
-/// Values of such a type must be value-initialized (`T v{};`) before use: the
-/// padding is copied to the wire verbatim, and is only guaranteed to be zero
-/// after value-initialization. See docs/security.md#unmanaged-struct-padding.
+/// Unchecked with respect to padding: values of such a type must be
+/// value-initialized (`T v{};`) before use, or the struct's padding bytes -
+/// indeterminate otherwise - are copied to the wire verbatim. See
+/// docs/security.md#unmanaged-struct-padding. Prefer MEMORYPACK_UNMANAGED_EXACT
+/// (compile-time proof there is no padding) or MEMORYPACK_UNMANAGED_SCRUBBED
+/// (padding always zeroed at runtime) below when you can list the members.
 #define MEMORYPACK_UNMANAGED(Type, ExpectedSize)                                           \
     static_assert(std::is_trivially_copyable_v<Type>,                                      \
                   #Type " must be trivially copyable to map a C# unmanaged struct");        \
@@ -1903,6 +1929,96 @@ template<typename T>
     template<> struct IsUnmanaged<Type> : std::true_type {};                               \
     template<> struct MemoryPackFormatter<Type> {                                          \
         static void Serialize(MemoryPackWriter& w, const Type& v) { w.WriteUnmanaged(v); } \
+        static void Deserialize(MemoryPackReader& r, Type& v) { r.ReadUnmanaged(v); }      \
+    };                                                                                     \
+    }
+
+// -- MEMORYPACK_UNMANAGED_EXACT / MEMORYPACK_UNMANAGED_SCRUBBED ------------------
+//
+// Both take the same (Type, ExpectedSize) as MEMORYPACK_UNMANAGED, plus the
+// struct's member names in declaration order, and turn the padding caveat above
+// from a documentation warning into either a compile error or a runtime
+// guarantee:
+//
+//   MEMORYPACK_UNMANAGED_EXACT(Type, size, m1, m2, ...)
+//     Proves at compile time that Type has NO padding (the sum of the listed
+//     members' sizes equals sizeof(Type)) - so there is nothing left for the
+//     padding caveat to apply to. Fails to compile otherwise. Use this for
+//     `[StructLayout(Pack = 1)]` structs, or any type you can show is naturally
+//     packed (e.g. an all-float vector).
+//
+//   MEMORYPACK_UNMANAGED_SCRUBBED(Type, size, m1, m2, ...)
+//     For a type that DOES have padding: serialization copies each member's
+//     bytes to its real offset in a zero-filled byte buffer (never assigning
+//     into an actual `Type` instance - see the note further down for why that
+//     distinction matters), so the wire bytes are always zero where the
+//     source struct had padding, no matter how the caller's instance was
+//     constructed. Costs a small stack buffer and a per-member memcpy.
+//
+// Listed members must be scalars, or types with no padding of their own -
+// MEMORYPACK_UNMANAGED_SCRUBBED's member-by-member copy does not recurse, so a
+// nested type with its own padding would still leak it into the buffer.
+
+#define MEMORYPACK_DETAIL_MEMBER_SIZE(name) + sizeof(((MemorypackProbeType*)nullptr)->name)
+
+/// MEMORYPACK_UNMANAGED, plus a compile-time proof that Type has no padding.
+/// See the block comment above.
+#define MEMORYPACK_UNMANAGED_EXACT(Type, ExpectedSize, ...)                                \
+    static_assert(std::is_trivially_copyable_v<Type>,                                      \
+                  #Type " must be trivially copyable to map a C# unmanaged struct");        \
+    static_assert(sizeof(Type) == (ExpectedSize),                                          \
+                  #Type " must be " #ExpectedSize " bytes to match the C# layout");         \
+    namespace memorypack { namespace detail {                                              \
+    template<> struct UnmanagedProbe<Type> {                                               \
+        using MemorypackProbeType = Type;                                                  \
+        static constexpr size_t MemberBytes =                                              \
+            0 MEMORYPACK_PP_FOREACH(MEMORYPACK_DETAIL_MEMBER_SIZE, __VA_ARGS__);           \
+    };                                                                                     \
+    }}                                                                                     \
+    static_assert(memorypack::detail::UnmanagedProbe<Type>::MemberBytes == sizeof(Type),   \
+                  #Type " has padding between members, so its padding bytes would go on "  \
+                  "the wire. Use MEMORYPACK_UNMANAGED_SCRUBBED, or [StructLayout(Pack=1)]");\
+    namespace memorypack {                                                                 \
+    template<> struct IsUnmanaged<Type> : std::true_type {};                               \
+    template<> struct MemoryPackFormatter<Type> {                                          \
+        static void Serialize(MemoryPackWriter& w, const Type& v) { w.WriteUnmanaged(v); } \
+        static void Deserialize(MemoryPackReader& r, Type& v) { r.ReadUnmanaged(v); }      \
+    };                                                                                     \
+    }
+
+// NOTE on the implementation below: this deliberately does NOT build a
+// `Type memorypackTmp{};` and assign members into it (`memorypackTmp.m = v.m;`
+// for each m). That looks equivalent, but measured on MSVC it is not: assigning
+// every declared member from `v` gives the compiler license to notice that the
+// result has the same member values as `memorypackTmp = v;` would (padding is
+// unspecified either way, so both are "equally valid") and fold the whole
+// sequence into a single whole-object copy FROM v - silently reintroducing v's
+// padding and defeating the entire macro. Building the wire bytes in a plain
+// `uint8_t` array that is never itself a `Type` instance leaves the compiler
+// no such shortcut: there is no second `Type` object for it to relate to `v`.
+#define MEMORYPACK_DETAIL_SCRUB_MEMBER(name) \
+    std::memcpy(memorypackBuf.data() + offsetof(MemorypackScrubType, name), &v.name, sizeof(v.name));
+
+/// MEMORYPACK_UNMANAGED, but serialization always builds the wire bytes in a
+/// zero-filled byte buffer, copying each member to its real offset, so a
+/// struct with padding never leaks it. See the block comment above.
+#define MEMORYPACK_UNMANAGED_SCRUBBED(Type, ExpectedSize, ...)                             \
+    static_assert(std::is_trivially_copyable_v<Type>,                                      \
+                  #Type " must be trivially copyable to map a C# unmanaged struct");        \
+    static_assert(std::is_standard_layout_v<Type>,                                         \
+                  #Type " must be standard-layout for MEMORYPACK_UNMANAGED_SCRUBBED to "    \
+                  "compute member offsets");                                               \
+    static_assert(sizeof(Type) == (ExpectedSize),                                          \
+                  #Type " must be " #ExpectedSize " bytes to match the C# layout");         \
+    namespace memorypack {                                                                 \
+    template<> struct IsUnmanaged<Type> : std::true_type {};                               \
+    template<> struct MemoryPackFormatter<Type> {                                          \
+        static void Serialize(MemoryPackWriter& w, const Type& v) {                        \
+            using MemorypackScrubType = Type;                                              \
+            std::array<uint8_t, sizeof(Type)> memorypackBuf{};                             \
+            MEMORYPACK_PP_FOREACH(MEMORYPACK_DETAIL_SCRUB_MEMBER, __VA_ARGS__)              \
+            w.WriteBytes(std::span<const uint8_t>(memorypackBuf));                         \
+        }                                                                                  \
         static void Deserialize(MemoryPackReader& r, Type& v) { r.ReadUnmanaged(v); }      \
     };                                                                                     \
     }

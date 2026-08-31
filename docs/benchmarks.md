@@ -131,6 +131,20 @@ per-element path. **Question: how much does the unmanaged bulk path actually buy
 Both the instruction count and the wire size differ - the bulk form emits
 `[4B count][count * 12B]`, the generic form emits `[4B count][count * (1B header + 12B)]`.
 
+### 7b. `_EXACT` vs `_SCRUBBED` - `BM_Serialize_UnmanagedExact_PerElement`, `BM_Serialize_UnmanagedScrubbed_PerElement`
+
+The same 4096-element `Vec3` shape, registered two ways and both walked through the
+*generic* per-element vector path (`Write(vector<T>)`, not `WriteUnmanagedCollection`),
+so the only difference is what each type's `Serialize()` does. `Vec3` uses
+`MEMORYPACK_UNMANAGED_EXACT` (a plain `WriteUnmanaged` memcpy - no padding to protect
+against, proven at compile time); `Vec3Scrubbed` uses `MEMORYPACK_UNMANAGED_SCRUBBED`
+(a zero-filled byte buffer built member-by-member at each member's real offset - see
+[docs/security.md#unmanaged-struct-padding](security.md#unmanaged-struct-padding) for
+why it is *not* implemented as "assign into a value-initialized temporary", which
+measured as unreliable on MSVC). **Question: what does SCRUBBED's safety cost per
+element** when there is no actual padding to zero, i.e. the worst case for judging
+whether to reach for it on a padded type.
+
 ### 8. End-to-end framing - `BM_PacketFraming_RoundTrip`
 
 `MakePacket(id, value)`, then the resulting bytes through `PacketFrameParser::Feed()`,
@@ -220,6 +234,8 @@ background work, disable frequency scaling / turbo, pin the process to a core, a
 | `BM_Deserialize_UnmanagedCollection` | (not yet measured) | (not yet measured) |
 | `BM_Serialize_GenericCollection` | (not yet measured) | (not yet measured) |
 | `BM_Deserialize_GenericCollection` | (not yet measured) | (not yet measured) |
+| `BM_Serialize_UnmanagedExact_PerElement` | (not yet measured) | (not yet measured) |
+| `BM_Serialize_UnmanagedScrubbed_PerElement` | (not yet measured) | (not yet measured) |
 | `BM_PacketFraming_RoundTrip` | (not yet measured) | (not yet measured) |
 
 These cells must be filled in from a real run on documented hardware, using an
